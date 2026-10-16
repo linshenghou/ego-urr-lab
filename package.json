@@ -19,7 +19,7 @@
     "test": "node --test tests/*.mjs",
     "check:publication": "node scripts/check-publication.mjs",
     "check:dist": "node scripts/check-publication.mjs --dist",
-    "verify": "npm test && npm run check:publication && npm run build"
+    "verify": "npm run prepare:vendor && npm test && npm run check:publication && npm run build"
   },
   "dependencies": {
     "three": "0.180.0"
