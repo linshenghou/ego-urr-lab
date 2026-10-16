@@ -1,28 +1,37 @@
-# EGO / URR Lab
+# Nymeria → URR → Taku
 
-An independent, interactive research notebook for understanding egocentric motion, task-space representations, and recorded Taku playback.
+An independent research notebook for inspecting how estimated human motion becomes task-space targets and a genuinely solved robot trajectory.
 
-**[Interactive research page](https://linshenghou.github.io/ego-urr-lab/)** · [Dyna's original research](https://www.dyna.co/dyna-2.1)
+**[Interactive research page](https://linshenghou.github.io/ego-urr-lab/)** · [Methods and measured errors](docs/methods.md) · [Data provenance](docs/nymeriaplus-provenance.md)
 
-中文：把 EGO 画面、公开 URR 指令、Taku 回放和逐帧误差放在同一时间轴上，区分哪些量是公开记录、哪些是推导、哪些并未提供。白色研究页面是独立设计，不是 Dyna 官网的镜像。
+中文：只研究 NymeriaPlus → 人体骨架 → URR 关键部位 → Taku 逆运动学。页面同时展示原始人体骨架、求解后的实体机器人、半透明机器人目标 mesh 和动态误差。原始人体目标与映射后的机器人目标明确分开；这不是 Dyna 官网回放或其控制器的复现。
 
-## What is reproduced—and what is not
+## What the page contains
 
-Three different source families are deliberately kept separate:
+Two excerpts from one licensed NymeriaPlus housework sequence: a continuous approximately 120-second clip and a 15-second hand-motion clip. The former Dyna demonstration episodes are not part of the public player.
 
-| Source | Available signals | What this page does |
-|---|---|---|
-| Human demonstrations: Box Kitting, Wipe Metal Shelves, Restock Shelves | EGO video, hand/footprint commands, source skeleton guides, exported Taku link poses | Decode and replay the published **RL simulation** states; no new IK or RL controller runs |
-| URR Tracking | Six task targets and recorded Taku joint/base states | Reconstruct robot geometry through FK and overlay the published task-space targets |
-| NymeriaPlus housework excerpts | Optimized MHR skeleton motion; wrist, elbow, chest and footprint quantities derived here | Replay the human skeleton and our URR-like extraction; **no Taku solution or tracking error** is claimed |
+| Layer | Meaning |
+|---|---|
+| Human skeleton and source URR | FK of the estimated MHR skeleton; derived wrist, elbow, chest and footprint quantities |
+| Semi-transparent Taku meshes | Robot-space retarget objectives, not the original human coordinates or achieved poses |
+| Solid Taku | Our offline 21-DOF IK joint solution, reconstructed by FK during playback |
+| Error panel | Same-time mapped-target versus solved-FK residuals; not measured hardware error |
 
-This is **not affiliated with or endorsed by Dyna Robotics**. It does not reproduce their training pipeline or controller. It contains no private robot geometry, internal robot recordings, or hardware control connection.
+This is original research software, **not affiliated with or endorsed by Dyna Robotics or Meta**. It does not reproduce Dyna's learned policy, training pipeline, or hardware controller. No private robot geometry, internal robot recordings, or hardware connection is included.
 
-The human-replay package does **not** publish the complete chest/elbow RL command stream. Its shoulder guides assume a 0.30 m upper arm; this viewer does not fabricate an EGO chest target. A shoulder-midpoint chest could be a separately labelled research proxy, not a measured sternum. In the separate Tracking source, chest pose and elbow position are official targets. An elbow mesh can rotate toward the wrist even when its recorded position stays fixed; that display rotation is not a measured elbow orientation. No measured leg skeleton is inferred from a footprint.
+## What has—and has not—been solved
+
+The authored solver optimizes planar base motion, four folding/waist joints and fourteen arm joints. Head, wheels and grippers remain at their zero reference. It uses weighted damped position IK, warm starts, experimental joint-position bounds, soft temporal/posture regularization, bounded numerical steps, and FK merit backtracking. It is not a velocity-level QP and does not use velocity feedforward.
+
+Manufacturer velocity/acceleration limits are **not** applied, but motion is **not unlimited**: a per-frame numerical continuity guard limits configuration changes. At approximately 30 Hz it therefore also limits apparent playback speed. Neither those bounds nor the position bounds are verified hardware specifications. Dynamics, collisions, contact, balance and wheel rolling constraints are not modeled.
+
+Initial arm posture is selected explicitly from the initial human wrist height: the long clip starts with an authored arms-down pose, the short clip with bent elbows. Per-site displacement/orientation changes are then applied relative to that home. This changes absolute heights and initial inter-site geometry; it is not a calibrated world-to-robot rigid transform. Physical floor calibration is not established.
+
+The final long clip's left/right hand position error means are **7.70 / 3.61 mm**, with P95 **24.99 / 9.72 mm**. However, maxima reach **143 / 178 mm**, and chest mean error is **68.6 mm**. These remaining failures are visible, not cropped out. See [full results and limitations](docs/methods.md).
 
 ## Run locally
 
-Requires Node.js 22.12 or newer and an internet connection for the official demonstration assets.
+Requires Node.js 22.12 or newer and internet access for the remote official Taku model and kinematics.
 
 ```sh
 npm ci
@@ -38,42 +47,40 @@ npm run build
 npm run preview
 ```
 
-Renderer dependencies are pinned by `package-lock.json`. `prepare:vendor` prepares only licensed rendering decoders and license notices, not robot/motion assets.
+Renderer dependencies are pinned by `package-lock.json`. `prepare:vendor` prepares licensed rendering decoders and notices, not third-party robot assets.
+
+## Reproduce the numerical pipeline
+
+Browser playback uses reviewed numerical artifacts; it does not run IK in real time. The standalone Python scripts reproduce extraction and retargeting without any private workspace imports:
+
+```sh
+python3 -m pip install -r requirements-export.txt
+python3 -B tests/nymeria-export.py
+python3 -B tests/taku-retarget.py
+```
+
+Obtain the source GLB through the official NymeriaPlus download procedure and the kinematics separately from the official HTTPS endpoint. See [extraction instructions](docs/nymeriaplus-provenance.md#reproduce-or-extend) and [IK reproduction](docs/methods.md#reproduce-the-ik-artifacts). Never commit signed download URLs, credentials, raw body meshes or unreviewed new data.
 
 ## Data and licensing
 
-Our original code, tests and documentation are MIT licensed. Two reviewed, non-audio **NymeriaPlus numeric excerpts** are included separately under **CC BY-NC 4.0**, for this independent noncommercial research demonstration. This does not grant commercial-use rights to the data. See the [NymeriaPlus provenance and changes](docs/nymeriaplus-provenance.md), [full dataset license](licenses/NYMERIAPLUS-DATA-LICENSE.txt), and [third-party notices](THIRD_PARTY_NOTICES.md).
+Original code, tests and documentation are MIT licensed. The two human-motion excerpts **and their two generated Taku trajectory companions** are reviewed numerical NymeriaPlus adaptations under **CC BY-NC 4.0**, not MIT. They are included for noncommercial research with source attribution and change notices. See [data provenance](docs/nymeriaplus-provenance.md), [full dataset license](licenses/NYMERIAPLUS-DATA-LICENSE.txt), and [third-party notices](THIRD_PARTY_NOTICES.md).
 
-The browser fetches Dyna model, trajectory and video resources directly from Dyna's public HTTPS origin when a Dyna source is loaded. Those resources are **not** bundled, mirrored or covered by this repository's MIT license. Public availability and CORS support do not establish permission to redistribute a dataset. NymeriaPlus raw GLB, model weights, imagery, video, audio and participant demographics are not included.
+The browser fetches Taku geometry and kinematics directly from Dyna's public HTTPS origin. These third-party assets are **not bundled or mirrored** and are not covered by this repository's MIT license. No Dyna videos, demonstration trajectories, website application code or logos are included. No NymeriaPlus raw GLB, model weights, images, video, audio or participant demographics are included.
 
-External loading contacts Dyna's servers; availability and source contents can change. Resource failures are shown explicitly—missing measurements are not replaced with synthetic recordings. No analytics, cookies, upload service or account is required. Locally running a viewer does not make upstream resources immutable.
+Remote loading contacts Dyna's servers and may fail if availability or CORS policy changes. The kinematics hash is pinned to the version used for optimization, and decoded model geometry is separately hash-pinned; unreviewed changes must not silently produce a different robot. Missing data/assets are shown as unavailable, not replaced by synthetic recordings. No analytics, upload service or account is required.
 
-Provenance includes source URLs and observed integrity information. An upstream model may change before its manifest is updated; a stale expected hash is a warning, not a claim that a different binary has been verified against that hash.
+## GitHub Pages and publication checks
 
-## Analysis conventions
+The Actions workflow tests and builds the site, then deploys `dist/` from `main` through the `github-pages` environment. Select **Settings → Pages → Source → GitHub Actions** for a fork. Relative build URLs support a project path such as `/ego-urr-lab/`.
 
-- Units: metres and radians internally; centimetres/degrees where indicated in the UI. Dyna coordinates use Z-up source `robot_world`. NymeriaPlus is transformed from glTF Y-up to Z-up, then aligned by initial pelvis XY/yaw; this is not an independently calibrated floor estimate.
-- Position error: Euclidean distance between a target and the corresponding achieved position **at the same source time**. There is no lag fitting or best-time alignment.
-- Dyna episode statistics use valid native source samples (15 Hz for EGO, 12 Hz for the inspected Tracking source), not display frame rate. No transient trimming, smoothing or hand-selected error exclusion.
-- Dyna's exact source crop is retained. Restock Shelves begins at 1.3 s, a half sample at 15 Hz; interpolation is for display, not an extra native measurement.
-- In EGO commands, the direct achieved hand quaternion is not published. Direct orientation error remains unavailable, not zero. An optional **FK-derived** orientation overlay composes the exported `wrist_roll` world pose with the fixed `gripper_joint_frame`. Its derived orientation errors are kept separate from direct measurements. The mean/max positional agreement with published `ach.ee` is a source-consistency check, not independent validation of orientation accuracy.
-- NymeriaPlus targets are our extraction from human motion, not official URR labels: wrists carry poses, elbows carry positions only, chest uses shoulder/hip geometry, and footprint is a pelvis projection/yaw proxy. There is no robot achieved stream to compare against these targets.
-- Player speed changes presentation speed only, not the measurements or statistics.
-- A low tracking error does not establish physical safety, collision freedom, contact consistency or deployability.
+Update this README's project link and optional `VITE_REPOSITORY_URL` when forking. The publication guard restricts included numerical artifacts to reviewed paths, schemas, sizes and pinned hashes in both source and build output. Adding a new recording requires another license/privacy review; passing a guard is not a substitute for that review.
 
-## GitHub Pages
+## References
 
-The Actions workflow runs browser-data/publication tests and standalone synthetic exporter tests (Python 3.14 with pinned NumPy/SciPy), then builds on pull requests and deploys `dist/` from `main` through the `github-pages` environment. The exporter tests do not download any dataset. Select **Settings → Pages → Source → GitHub Actions** once for a new repository. Relative build URLs support a project-page path such as `/ego-urr-lab/`.
-
-To fork, update the README project link and optional `VITE_REPOSITORY_URL`. Do not add raw downloaded datasets or private workspace exports. Only the two explicitly reviewed NymeriaPlus numeric excerpts are permitted; the publication guard checks exact paths, sizes, structure and pinned hashes in source and build output. Additional data require a new license/privacy review. `check:publication` is an additional guard, not a substitute for review.
-
-## Research references
-
-- [Dyna-2.1: source article and interactive demonstrations](https://www.dyna.co/dyna-2.1)
-- [Official human-replay episode index](https://www.dyna.co/assets/we/ego-replay/data/episodes.json)
-- [Official URR Tracking data](https://www.dyna.co/assets/we/tracking_data.json)
 - [Official Nymeria/NymeriaPlus project and download instructions](https://github.com/facebookresearch/nymeria_dataset)
+- [Official NymeriaPlus sequence](https://explorer.projectaria.com/nymeria_plus/20231222_s1_kenneth_fischer_act6_kbpn0q)
 - [Official NymeriaPlus split dataset license](https://github.com/facebookresearch/nymeria_dataset/blob/main/NYMERIAPLUS_DATASET_LICENSE)
+- [Dyna-2.1 research article](https://www.dyna.co/dyna-2.1) and [official Taku kinematics](https://www.dyna.co/assets/we/dvt1_kin.json)
 - [Three.js documentation](https://threejs.org/docs/)
 
-MIT for original repository code and documentation; CC BY-NC 4.0 for the bundled NymeriaPlus numeric excerpts. See [LICENSE](LICENSE).
+MIT for original code/documentation; CC BY-NC 4.0 for all bundled Nymeria-derived numeric data. See [LICENSE](LICENSE).

@@ -12,6 +12,7 @@ const sourceFiles = new Set([
   'scripts/check-publication.mjs', 'scripts/prepare-vendor.mjs',
   'scripts/export-nymeria.py',
   'tests/nymeria-export.py',
+  'scripts/retarget-taku.py', 'tests/taku-retarget.py',
   'requirements-export.txt',
 ]);
 const sourceDirectories = new Set(['.github', '.github/workflows', 'docs', 'licenses', 'scripts', 'src', 'tests']);
@@ -32,6 +33,15 @@ const nymeriaFiles = new Map([
   ['data/nymeria/housework-long.json', [30, 150]],
   ['data/nymeria/housework-hands.json', [562.5, 577.5]],
 ]);
+const nymeriaIKFiles = new Map([
+  ['data/nymeria/housework-long-taku.json', 'data/nymeria/housework-long.json'],
+  ['data/nymeria/housework-hands-taku.json', 'data/nymeria/housework-hands.json'],
+]);
+const publishedNumericFiles = [...nymeriaFiles.keys(), ...nymeriaIKFiles.keys()];
+const takuKinematicsHash = '02505a774c55fb3f998265e32840bffd86fba690bd4c9e1af857663ca39ec83f';
+const takuJoints = ['robot.x', 'robot.y', 'robot.yaw', 'robot.folding_low_joint', 'robot.folding_high_joint', 'robot.waist_pitch_joint', 'robot.waist_yaw_joint',
+  ...['left', 'right'].flatMap((side) => ['shoulder_pitch', 'shoulder_roll', 'shoulder_yaw', 'elbow', 'wrist_yaw', 'wrist_pitch', 'wrist_roll'].map((name) => `robot.${side}_${name}_joint`))];
+const takuLinks = { left: 'left_ee_fk_target_frame', right: 'right_ee_fk_target_frame', elbow_left: 'left_elbow_link', elbow_right: 'right_elbow_link', chest: 'torso_body_link', footprint: 'agv_base' };
 const nymeriaDirectories = new Set(['data', 'data/nymeria']);
 const nymeriaSites = ['left', 'right', 'elbow_left', 'elbow_right', 'chest', 'footprint'];
 const nymeriaJoints = ['root', 'c_spine0', 'c_spine1', 'c_spine2', 'c_spine3', 'c_neck', 'c_head',
@@ -79,13 +89,14 @@ const finite = (value) => typeof value === 'number' && Number.isFinite(value);
 const vector = (value, size) => Array.isArray(value) && value.length === size && value.every(finite);
 const bools = (value, size) => Array.isArray(value) && value.length === size && value.every((v) => typeof v === 'boolean');
 const quaternion = (value) => vector(value, 4) && Math.abs(Math.hypot(...value) - 1) < 1e-4;
+const textFields = (value, keys) => keys.every((key) => typeof value[key] === 'string' && value[key].length > 0 && value[key].length <= 5000);
 
 async function reviewedNymeriaFiles(root) {
   const filename = path.join(root, 'scripts/nymeria-assets.json'), stat = await lstat(filename);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4096) throw new Error('invalid reviewed manifest file');
   const review = JSON.parse(await readFile(filename, 'utf8'));
   if (!exactKeys(review, ['schema', 'source_sha256', 'files']) || review.schema !== 'ego-urr-lab.nymeria-publication.v1'
-    || review.source_sha256 !== nymeriaSourceHash || !exactKeys(review.files, [...nymeriaFiles.keys()])) throw new Error('invalid reviewed manifest schema');
+    || review.source_sha256 !== nymeriaSourceHash || !exactKeys(review.files, publishedNumericFiles)) throw new Error('invalid reviewed manifest schema');
   let total = 0;
   for (const entry of Object.values(review.files)) {
     if (!exactKeys(entry, ['sha256', 'bytes']) || !/^[a-f0-9]{64}$/.test(entry.sha256) || !Number.isInteger(entry.bytes)
@@ -158,6 +169,56 @@ function validateNymeriaPayload(document, relative) {
   return null;
 }
 
+function validateTakuPayload(document, raw, rawPath, rawHash) {
+  if (!exactKeys(document, ['schema', 'time', 'joint_names', 'q', 'targets', 'actual', 'errors', 'stats', 'mapping', 'solver', 'source', 'license'])
+    || document.schema !== 'ego-urr-lab.taku-retarget.v1') return 'unexpected IK companion schema';
+  const { time, joint_names: names, q, targets, actual, errors, stats, mapping, solver, source, license } = document, n = raw.time?.length;
+  if (JSON.stringify(time) !== JSON.stringify(raw.time) || JSON.stringify(names) !== JSON.stringify(takuJoints)) return 'IK/source clock or joint order mismatch';
+  if (!exactKeys(source, ['sequence_id', 'kinematics_url', 'kinematics_sha256', 'source_excerpt_sha256', 'source_time_start_s', 'source_time_end_s'])
+    || source.sequence_id !== nymeriaSequence || source.kinematics_url !== 'https://www.dyna.co/assets/we/dvt1_kin.json'
+    || source.kinematics_sha256 !== takuKinematicsHash || source.source_excerpt_sha256 !== rawHash
+    || source.source_time_start_s !== raw.source_time[0] || source.source_time_end_s !== raw.source_time.at(-1)) return 'IK companion source pairing mismatch';
+  const mappedReason = validateNymeriaPayload({ ...raw, targets, license }, rawPath);
+  if (mappedReason) return `IK mapped targets: ${mappedReason}`;
+  if (!textFields(license, Object.keys(license)) || !license.changes.includes('IK') || !license.changes.includes('Not official Dyna')) return 'missing IK derivative change notice';
+  for (const site of nymeriaSites) for (const key of ['pv', 'ov', 'interval_pv', 'interval_ov'])
+    if (JSON.stringify(targets[site][key]) !== JSON.stringify(raw.targets[site][key])) return 'IK target validity differs from source';
+  if (!exactKeys(mapping, ['method', 'position_equation', 'orientation_equation', 'absolute_source_height_preserved', 'limb_length_scaling', 'home_selection', 'source_skeleton', 'site_links', 'chest', 'elbows'])
+    || mapping.absolute_source_height_preserved !== false || mapping.limb_length_scaling !== false
+    || !textFields(mapping, ['method', 'position_equation', 'orientation_equation', 'source_skeleton', 'chest', 'elbows'])
+    || !exactKeys(mapping.site_links, nymeriaSites) || nymeriaSites.some((site) => mapping.site_links[site] !== takuLinks[site])
+    || !exactKeys(mapping.home_selection, ['requested', 'selected', 'initial_mean_wrist_drop_below_human_chest_m', 'rule'])
+    || !['arms-down', 'bent-elbow'].includes(mapping.home_selection.selected)
+    || !textFields(mapping.home_selection, ['requested', 'selected', 'rule'])
+    || !finite(mapping.home_selection.initial_mean_wrist_drop_below_human_chest_m)) return 'invalid IK mapping metadata';
+  if (!exactKeys(solver, ['method', 'dof', 'weights', 'damping', 'temporal_regularization', 'posture_regularization', 'home', 'lower', 'upper', 'trust_step_per_iteration', 'trust_step_per_frame',
+    'frame_trust_notice', 'max_iterations_per_frame', 'actuator_velocity_limits', 'actuator_acceleration_limits', 'bounds_are_manufacturer_limits', 'bounds_notice', 'not_modeled', 'fixed_joints', 'metric_sampling', 'max_abs_joint_step', 'diagnostics'])
+    || solver.dof !== 21 || solver.actuator_velocity_limits !== false || solver.actuator_acceleration_limits !== false || solver.bounds_are_manufacturer_limits !== false
+    || !textFields(solver, ['method', 'frame_trust_notice', 'bounds_notice', 'fixed_joints', 'metric_sampling'])
+    || !exactKeys(solver.weights, nymeriaSites)
+    || !['damping', 'temporal_regularization', 'posture_regularization', 'max_iterations_per_frame'].every((key) => finite(solver[key]) && solver[key] >= 0)
+    || !['home', 'lower', 'upper', 'trust_step_per_iteration', 'trust_step_per_frame', 'max_abs_joint_step'].every((key) => vector(solver[key], 21))
+    || JSON.stringify(solver.not_modeled) !== JSON.stringify(['dynamics', 'torques', 'collision', 'contact', 'balance', 'wheel rolling constraints', 'physical actuator feasibility'])
+    || !exactKeys(solver.diagnostics, ['frames', 'total_iterations', 'backtracking_stalls', 'frame_trust_active_frames', 'maximum_final_objective', 'merit_increase_frames', 'near_numerical_bound_frames'])
+    || solver.diagnostics.frames !== n || !Object.values(solver.diagnostics).every((value) => finite(value) && value >= 0)) return 'invalid IK solver scope/metadata';
+  for (const site of nymeriaSites) if (!exactKeys(solver.weights[site], ['position', 'orientation_m_per_rad']) || !Object.values(solver.weights[site]).every((value) => finite(value) && value >= 0)) return 'invalid IK weights';
+  if (!Array.isArray(q) || q.length !== n || q.some((row, i) => !vector(row, 21) || row.some((value, j) => value < solver.lower[j] - 2e-9 || value > solver.upper[j] + 2e-9
+    || (i && Math.abs(value - q[i - 1][j]) > solver.trust_step_per_frame[j] + 2e-9)))) return 'invalid IK numerical configurations';
+  if (!exactKeys(actual, nymeriaSites) || !exactKeys(errors, nymeriaSites) || !exactKeys(stats, nymeriaSites)) return 'unexpected IK result fields';
+  for (const site of nymeriaSites) {
+    const result = actual[site], error = errors[site], stat = stats[site], elbow = site.startsWith('elbow');
+    if (!exactKeys(result, ['p', 'q']) || !Array.isArray(result.p) || result.p.length !== n || !result.p.every((p) => vector(p, 3))
+      || (elbow ? result.q !== null : !Array.isArray(result.q) || result.q.length !== n || !result.q.every(quaternion))) return 'invalid IK saved FK arrays';
+    if (!exactKeys(error, ['position_m', 'orientation_rad']) || !exactKeys(stat, ['position', 'orientation'])) return 'invalid IK error/stat fields';
+    for (const [key, field, mask] of [['position_m', 'position', 'pv'], ['orientation_rad', 'orientation', 'ov']]) {
+      if (!Array.isArray(error[key]) || error[key].length !== n || error[key].some((value, i) => targets[site][mask][i] ? !finite(value) || value < 0 : value !== null)) return 'invalid IK error/validity arrays';
+      const values = error[key].filter(finite), s = stat[field];
+      if (values.length ? !exactKeys(s, ['n', 'mean', 'p95', 'max']) || s.n !== values.length || !Object.values(s).every((value) => finite(value) && value >= 0) : s !== null) return 'invalid IK sample statistics';
+    }
+  }
+  return null;
+}
+
 /** Audit Vite public or final output directories without following symlinks. */
 async function checkAssetTree(root, directory, { built = false } = {}) {
   const problems = [], found = new Set(); let count = 0, totalBytes = 0, nymeriaBytes = 0, review;
@@ -181,7 +242,7 @@ async function checkAssetTree(root, directory, { built = false } = {}) {
         catch (error) { problems.push(`${label}: cannot verify vendor input (${error.code ?? error.message})`); }
         continue;
       }
-      if (nymeriaFiles.has(relative)) {
+      if (publishedNumericFiles.includes(relative)) {
         found.add(relative); nymeriaBytes += info.size;
         if (info.size > nymeriaMaxFileBytes) { problems.push(`${label}: numeric excerpt exceeds size limit`); continue; }
         const bytes = await readFile(filename); scanText(bytes, label, problems);
@@ -189,7 +250,14 @@ async function checkAssetTree(root, directory, { built = false } = {}) {
           review ??= await reviewedNymeriaFiles(root);
           const expected = review[relative];
           if (bytes.length !== expected.bytes || createHash('sha256').update(bytes).digest('hex') !== expected.sha256) problems.push(`${label}: numeric excerpt differs from reviewed hash/size`);
-          const reason = validateNymeriaPayload(JSON.parse(bytes.toString('utf8')), relative);
+          let reason;
+          if (nymeriaIKFiles.has(relative)) {
+            const sourcePath = nymeriaIKFiles.get(relative), paired = path.join(directory, sourcePath), pairedInfo = await lstat(paired);
+            if (!pairedInfo.isFile() || pairedInfo.isSymbolicLink() || pairedInfo.size > nymeriaMaxFileBytes) throw new Error('paired source is not a regular reviewed file');
+            const rawBytes = await readFile(paired);
+            if (createHash('sha256').update(rawBytes).digest('hex') !== review[sourcePath].sha256) throw new Error('paired source differs from reviewed hash');
+            reason = validateTakuPayload(JSON.parse(bytes.toString('utf8')), JSON.parse(rawBytes.toString('utf8')), sourcePath, review[sourcePath].sha256);
+          } else reason = validateNymeriaPayload(JSON.parse(bytes.toString('utf8')), relative);
           if (reason) problems.push(`${label}: ${reason}`);
         } catch (error) { problems.push(`${label}: cannot verify numeric excerpt (${error instanceof SyntaxError ? 'invalid JSON' : error.code ?? error.message})`); }
         continue;
@@ -203,8 +271,8 @@ async function checkAssetTree(root, directory, { built = false } = {}) {
   }
   await walk(directory);
   for (const name of vendorInputs.keys()) if (!found.has(name)) problems.push(`${path.basename(directory)}/${name}: missing generated vendor file`);
-  if ([...nymeriaFiles.keys()].some((name) => found.has(name)) || await optionalStat(path.join(root, 'scripts/nymeria-assets.json'))) {
-    for (const name of nymeriaFiles.keys()) if (!found.has(name)) problems.push(`${path.basename(directory)}/${name}: missing reviewed numeric excerpt`);
+  if (publishedNumericFiles.some((name) => found.has(name)) || await optionalStat(path.join(root, 'scripts/nymeria-assets.json'))) {
+    for (const name of publishedNumericFiles) if (!found.has(name)) problems.push(`${path.basename(directory)}/${name}: missing reviewed numeric excerpt`);
   }
   if (nymeriaBytes > nymeriaMaxTotalBytes) problems.push(`${path.basename(directory)}: numeric excerpts exceed total size limit`);
   if (built && !found.has('index.html')) problems.push('dist/index.html: missing build entry');

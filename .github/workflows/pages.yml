@@ -30,6 +30,9 @@ jobs:
       - run: python -B tests/nymeria-export.py
         env:
           PYTHONDONTWRITEBYTECODE: '1'
+      - run: python -B tests/taku-retarget.py
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
       - run: npm run prepare:vendor
       - run: npm run check:publication
       - run: npm run build

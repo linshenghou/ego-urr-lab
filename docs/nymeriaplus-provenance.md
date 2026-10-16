@@ -1,6 +1,6 @@
-# NymeriaPlus: skeleton → URR-like task quantities
+# NymeriaPlus: skeleton → URR → authored Taku IK
 
-This is an independent, noncommercial study of a human motion representation. The two bundled excerpts replay **human skeleton motion and quantities derived from it**. They do not contain a Taku trajectory, run robot IK, measure robot tracking error, or reproduce Dyna's training pipeline.
+This is an independent, noncommercial study of a human motion representation and robot retargeting. Two bundled source excerpts contain **human skeleton motion and quantities derived from it**. Two companion artifacts contain **our genuinely optimized Taku joint configurations and FK residuals**. These are not official Dyna motion, hardware measurements, a learned policy, or a reproduction of Dyna's training pipeline. The public player is Nymeria-only; source extraction and robot retargeting remain distinct stages.
 
 ## Source and permission
 
@@ -18,10 +18,12 @@ The [full original split-license text](../licenses/NYMERIAPLUS-DATA-LICENSE.txt)
 |---|---|---|
 | `public/data/nymeria/housework-long.json` | 30–150 s | Longer walking/manipulation context |
 | `public/data/nymeria/housework-hands.json` | 562.5–577.5 s | Shorter hand-motion inspection |
+| `public/data/nymeria/housework-long-taku.json` | Same retained long-clip timestamps | Authored IK solution, mapped targets, FK and errors |
+| `public/data/nymeria/housework-hands-taku.json` | Same retained short-clip timestamps | Authored IK solution, mapped targets, FK and errors |
 
-Both are cropped from the same source recording. They retain source-relative timestamps alongside an excerpt-relative clock. Exact retained endpoints, native frame counts and display frame counts are in each JSON's `extraction` object. A source-relative interval is not a wall-clock time or a camera synchronization claim.
+Both source excerpts are cropped from the same source recording. They retain source-relative timestamps alongside an excerpt-relative clock. Exact retained endpoints, native frame counts and display frame counts are in the source JSON's `extraction` object. Each robot companion preserves that excerpt's clock and pins its input-file SHA-256. A source-relative interval is not a wall-clock time or a camera synchronization claim.
 
-Only 23 selected major-body joint positions, skeleton edges, six derived task quantities, validity masks and numerical provenance/statistics are included. No raw GLB, skinned mesh, model weights, video, images, audio, participant demographics, private robot geometry or solved robot states are included. The official sequence identifier is retained for provenance, not as a claim about participant identity. Signed download URLs are not stored or published.
+The source excerpts contain 23 selected major-body joint positions, skeleton edges, six derived task quantities, validity masks and numerical provenance/statistics. The companions add 21 optimized variables, mapped target/achieved poses, explicit solver/mapping metadata and residual summaries. All four are non-audio numerical adaptations under CC BY-NC 4.0. No raw GLB, skinned mesh, model weights, video, images, audio, participant demographics, private robot geometry or third-party robot assets are included. The official sequence identifier is retained for provenance, not as a claim about participant identity. Signed download URLs are not stored or published.
 
 The reviewed source GLB SHA-256 is `08d7caad28d066969d023d6f1424a5b0e1daa850cd85601a49f51189a0fea653`. Each exported file's byte count and SHA-256 are pinned separately in [the publication manifest](../scripts/nymeria-assets.json). These hashes establish which inputs/outputs were inspected; they are not evidence that the motion estimates are physically accurate.
 
@@ -46,11 +48,21 @@ The initial alignment uses the first frame in the requested crop where all requi
 
 The chest-to-pelvis construction and the selected pelvis axis are recorded in metadata. Footprint does **not** measure feet, support contacts, balance, or a robot base. Source Z=0 is a coordinate-plane proxy: this export does **not** establish a calibrated physical floor. A rendering mesh that points from an elbow toward its wrist adds a display orientation; it does not create a recorded elbow orientation.
 
+## Robot retargeting: additional changes
+
+The standalone [Taku retargeter](../scripts/retarget-taku.py) uses separately obtained official Taku kinematics to optimize actual robot joint configurations. It selects an explicitly recorded initial arm posture from source wrist height, then maps per-site position displacement and orientation change relative to robot FK home. Absolute human height and initial inter-site geometry are not preserved. No limb-length scaling or time trimming is applied.
+
+The solver is weighted damped **position IK**, with warm starts, experimental position bounds, soft temporal/posture regularization, per-iteration and per-frame numerical trust boxes, and FK merit backtracking. It is not the earlier velocity-level QP/feedforward experiment and not a learned Dyna controller. Manufacturer joint limits are absent from the public kinematics; no claim of hardware-safe bounds is made. A per-frame jump guard is an effective numerical displacement/speed cap at the sample rate, despite not being a manufacturer velocity or acceleration specification.
+
+The browser recomputes FK from the saved solution; transparent Taku mesh copies display mapped targets, while the separate source skeleton view retains the original aligned human coordinates. Elbow mesh heading is only a display construction, not an additional recorded or optimized elbow orientation. See [exact mappings, solver configuration, safeguards, reproduction and measured residuals](methods.md).
+
+The generated robot data do not copy the Taku kinematics document or mesh. Those assets remain external and separately licensed; the repo's MIT code license does not grant rights to them.
+
 ## Validity and motion summaries
 
 The exporter marks both endpoints of a native position interval invalid if speed exceeds **4 m/s for wrists/elbows** or **2.5 m/s for chest/footprint**. Orientation intervals exceeding **20 rad/s** are marked invalid for orientation. Chest construction also checks shoulder separation and pelvis-to-shoulder distance; footprint heading requires a sufficiently nonvertical selected axis. These are explicit research heuristics, not sensor confidence or physical safety guarantees. Thresholds and flagged-frame counts are exported.
 
-`motionStats` contains speed summaries from adjacent **native** samples with valid task endpoints, before display decimation. Invalid intervals are excluded and counts are provided. Consequently these summaries do not describe the unrestricted raw stream, must not be compared as identical to Dyna's error statistics, and are not robot tracking errors. The playback speed control affects presentation only.
+`motionStats` contains speed summaries from adjacent **native** samples with valid task endpoints, before display decimation. Invalid intervals are excluded and counts are provided. Consequently these summaries do not describe the unrestricted raw stream and are not robot tracking errors. The Taku companions' error statistics instead use valid targets at retained approximately 30 Hz sample times, comparing mapped targets with solved FK. They are not physical tracking measurements. The playback speed control affects presentation only.
 
 ## Reproduce or extend
 
@@ -59,15 +71,18 @@ Obtain the dataset through the [official getting-started workflow](https://githu
 ```sh
 python3 -m pip install -r requirements-export.txt
 python3 -B tests/nymeria-export.py
+python3 -B tests/taku-retarget.py
 ```
 
 Then supply a locally obtained optimized MHR GLB:
 
 ```sh
-python3 scripts/export-nymeria.py input/xdata_mhr.glb \
+python3 -B scripts/export-nymeria.py input/xdata_mhr.glb \
   --sequence-id 20231222_s1_kenneth_fischer_act6_kbpn0q \
   --start 30 --duration 120 --display-fps 30 \
   --output /tmp/nymeria-candidate.json
 ```
 
-The exporter refuses to overwrite an existing output by default. Its explicit `--overwrite-derived` option only accepts an existing export with this exporter's schema, never the source GLB. Review any new artifact and its license/privacy implications before publication. Generating a file does not add it to the public allowlist: the guard only accepts the two exact paths above with the reviewed source identity, schema, attribution, byte counts and hashes. Arbitrary JSON, models and media remain blocked in both `public/` and the final `dist/` artifact.
+The exporter refuses to overwrite an existing output by default. Its explicit `--overwrite-derived` option only accepts an existing export with this exporter's schema, never the source GLB. Continue with the separately documented [IK reproduction commands](methods.md#reproduce-the-ik-artifacts) to create robot companions.
+
+Review any new artifact and its license/privacy implications before publication. Generating a file does not add it to the public allowlist: the guard accepts only the four exact paths above with reviewed schema, attribution, byte counts and hashes. Arbitrary JSON, models and media remain blocked in both `public/` and the final `dist/` artifact.

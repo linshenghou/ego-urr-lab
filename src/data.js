@@ -4,13 +4,7 @@ import { NYMERIA_CATALOG, loadNymeriaEpisode } from './nymeria.js';
 
 export const EGO_BASE = 'https://www.dyna.co/assets/we/ego-replay/data/';
 export const TRACKING_BASE = 'https://www.dyna.co/assets/we/';
-export const CATALOG = Object.freeze([
-  { id: 'box-kitting', label: 'Box Kitting', kind: 'ego', sourceId: '12545090', start: 0, end: 73.2, description: '73.2 s · original 1× RL simulation replay' },
-  { id: 'wipe-shelves', label: 'Wipe Metal Shelves', kind: 'ego', sourceId: '68c67b6dec331250d5e7485d', start: 13, end: 23, description: '10 s · source window 13–23 s' },
-  { id: 'restock-shelves', label: 'Restock Shelves', kind: 'ego', sourceId: '68ed3b821d840fbdae1cb24a', start: 1.3, end: 15.5, description: '14.2 s · source window 1.3–15.5 s' },
-  { id: 'urr-tracking', label: 'URR Tracking', kind: 'tracking', description: 'Six-site targets and recorded Taku joint states · separate source' },
-  ...NYMERIA_CATALOG,
-]);
+export const CATALOG = NYMERIA_CATALOG;
 export const SITES = ['left', 'right', 'chest', 'elbow_left', 'elbow_right', 'footprint'];
 export const finite = (value) => typeof value === 'number' && Number.isFinite(value);
 export const validPose = (pose) => Boolean(pose?.valid_position !== false && pose?.p?.length === 3 && pose.p.every(finite));
@@ -215,20 +209,7 @@ export function createTrackingEpisode(record, { document, kinematics }) {
   };
 }
 
-async function getJson(url, signal) {
-  const response = await fetch(url, { signal }); if (!response.ok) throw new Error(`Source HTTP ${response.status}: ${url}`);
-  return response.json();
-}
 export async function loadEpisode(id, { signal, onProgress = () => {} } = {}) {
   const record = CATALOG.find((item) => item.id === id); if (!record) throw new Error('Unknown episode');
-  if (record.kind === 'nymeria') return loadNymeriaEpisode(id, { signal, onProgress });
-  onProgress(`Loading official ${record.label} source…`);
-  if (record.kind === 'tracking') {
-    const [document, kinematics] = await Promise.all([getJson(TRACKING_BASE + 'tracking_data.json', signal), getJson(TRACKING_BASE + 'dvt1_kin.json', signal)]);
-    onProgress('Decoding recorded joints and native-sample errors…'); return createTrackingEpisode(record, { document, kinematics });
-  }
-  const folder = EGO_BASE + record.sourceId + '/';
-  const [manifest, commands, robot, skeleton, kinematics] = await Promise.all(['manifest.json', 'commands.json', 'robot.json', 'skeleton.json'].map((name) => getJson(folder + name, signal)).concat(getJson(EGO_BASE + 'dvt1_kin.json', signal)));
-  onProgress('Decoding source poses and native-sample errors…');
-  return createEgoEpisode(record, { manifest, commands, robot, skeleton, kinematics });
+  return loadNymeriaEpisode(id, { signal, onProgress });
 }

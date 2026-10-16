@@ -1,9 +1,9 @@
-/** Licensed, reduced NymeriaPlus skeleton excerpts. No robot IK is executed. */
+/** Licensed source skeleton decoder, paired with separately computed Taku IK. */
 import { Quaternion } from 'three';
 
 export const NYMERIA_CATALOG = Object.freeze([
-  { id: 'nymeria-housework-long', label: 'Housework · continuous 2 min', kind: 'nymeria', file: 'housework-long.json', description: 'NymeriaPlus · source 30–150 s · skeleton → derived URR only' },
-  { id: 'nymeria-housework-hands', label: 'Housework · hand movement', kind: 'nymeria', file: 'housework-hands.json', description: 'NymeriaPlus · source 562.5–577.5 s · skeleton → derived URR only' },
+  { id: 'nymeria-housework-long', label: 'Housework · continuous 2 min', kind: 'nymeria', file: 'housework-long.json', sha256: '70bb3ee276bc7720a579ad2efbf66fae48e093ae1203cad56f0a4378dd38d423', solution: 'housework-long-taku.json', solutionSha256: '3ddc07b2b09ddb7ece8e07f6e91246bf1e3f17f11e248520391278f32f721a1a', description: 'NymeriaPlus · source 30–150 s · skeleton → URR → offline Taku IK' },
+  { id: 'nymeria-housework-hands', label: 'Housework · hand movement', kind: 'nymeria', file: 'housework-hands.json', sha256: 'fcd41c4fa3e3a698402f9a1d1c02b4b58913b18fe7a5c59ae065fa7b60d0eea5', solution: 'housework-hands-taku.json', solutionSha256: '51ee6edd12f9d07a238d1d6f3c4eb235e1d85946ff3c78135ca6f4df415f328a', description: 'NymeriaPlus · source 562.5–577.5 s · skeleton → URR → offline Taku IK' },
 ]);
 const SITES = ['left', 'right', 'elbow_left', 'elbow_right', 'chest', 'footprint'];
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -73,10 +73,15 @@ export function createNymeriaEpisode(record, document) {
 }
 
 export async function loadNymeriaEpisode(id, { signal, onProgress = () => {} } = {}) {
+  const { createTakuEpisode, fetchVerifiedJson, TAKU_KINEMATICS_URL, TAKU_KINEMATICS_SHA256 } = await import('./taku-retarget.js');
   const record = NYMERIA_CATALOG.find((entry) => entry.id === id); if (!record) throw new Error('Unknown Nymeria episode');
   onProgress('Loading the licensed NymeriaPlus skeleton excerpt…');
-  const url = `${import.meta.env?.BASE_URL ?? './'}data/nymeria/${record.file}`;
-  const response = await fetch(url, { signal }); if (!response.ok) throw new Error(`Nymeria excerpt HTTP ${response.status}`);
-  const document = await response.json(); onProgress('Checking source clock, anatomical mapping and validity masks…');
-  return createNymeriaEpisode(record, document);
+  const base = `${import.meta.env?.BASE_URL ?? './'}data/nymeria/`;
+  const [document, solution, kinematics] = await Promise.all([
+    fetchVerifiedJson(base + record.file, record.sha256, signal),
+    fetchVerifiedJson(base + record.solution, record.solutionSha256, signal),
+    fetchVerifiedJson(TAKU_KINEMATICS_URL, TAKU_KINEMATICS_SHA256, signal),
+  ]);
+  onProgress('Verifying solved joint states against independent browser FK…');
+  return createTakuEpisode(record, document, solution, kinematics);
 }

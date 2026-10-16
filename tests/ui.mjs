@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { frameError, summarize, episodeStatistics, errorSegments, withDerivedOrientation } from '../src/charts.js';
+import { frameError, summarize, episodeStatistics, errorSegments } from '../src/charts.js';
 
 // Small synthetic fixtures test arithmetic only; they are never bundled as site data.
 const frame = (t, leftPosition, rightPosition, leftRotation = null, rightRotation = null) => ({
@@ -25,7 +25,7 @@ test('summary uses valid original samples and linear P95', () => {
   assert.deepEqual(summarize([0, 0]), { n: 2, mean: 0, p95: 0, max: 0 });
 });
 
-test('episode statistics do not create orientation samples for EGO data', () => {
+test('episode statistics do not fabricate missing orientation samples', () => {
   const result = episodeStatistics([frame(0, .01, .03), frame(1, .03, .05)]);
   assert.deepEqual(result.left.position, { n: 2, mean: 2, p95: 2.9, max: 3 });
   assert.equal(result.left.orientation, null);
@@ -33,16 +33,15 @@ test('episode statistics do not create orientation samples for EGO data', () => 
   assert.equal(result.right.position.mean, 4);
 });
 
-test('FK-derived rotation is opt-in and never replaces direct position or mutates source errors', () => {
-  const original = frame(0, .02, .03);
-  original.derived_errors = { left: { position_m: 999, orientation_rad: Math.PI / 6 }, right: { position_m: 999, orientation_rad: Math.PI / 3 } };
-  assert.equal(withDerivedOrientation(original, false), original);
-  const derived = withDerivedOrientation(original, true);
-  assert.equal(frameError(derived, 'left'), 2);
-  assert.equal(frameError(derived, 'right'), 3);
-  assert.ok(Math.abs(frameError(derived, 'left', 'orientation') - 30) < 1e-10);
-  assert.equal(original.errors.left.orientation_rad, null);
-  assert.equal(frameError(withDerivedOrientation(frame(1, .02, .03), true), 'left', 'orientation'), null);
+test('six-site statistics retain solved chest errors and elbow position-only semantics', () => {
+  const sample = frame(0, .02, .03, Math.PI / 6, Math.PI / 3);
+  sample.errors.chest = { position_m: .04, orientation_rad: Math.PI / 4 };
+  sample.errors.elbow_left = { position_m: .05, orientation_rad: null };
+  const result = episodeStatistics([sample], ['left', 'right', 'chest', 'elbow_left']);
+  assert.equal(result.chest.position.mean, 4);
+  assert.equal(result.chest.orientation.mean, 45);
+  assert.equal(result.elbow_left.position.mean, 5);
+  assert.equal(result.elbow_left.orientation, null);
 });
 
 test('curves break at missing samples rather than visually interpolating across gaps', () => {
@@ -51,22 +50,21 @@ test('curves break at missing samples rather than visually interpolating across 
   assert.deepEqual(errorSegments(frames, 'left', 'orientation'), []);
 });
 
-test('public interface includes accessible playback, layers, source notes, and precise semantics', async () => {
+test('Nymeria-only interface retains accessible independent robot and target layers', async () => {
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
-  for (const id of ['timeline', 'play-pause', 'playback-speed', 'layer-solid', 'layer-targets', 'layer-skeleton', 'layer-errors', 'target-opacity', 'provenance-content', 'load-error']) assert.match(html, new RegExp(`id="${id}"`));
-  assert.match(html, /role="tablist"/);
+  for (const id of ['timeline', 'play-pause', 'playback-speed', 'layer-solid', 'layer-targets', 'layer-errors', 'target-opacity', 'raw-skeleton-canvas', 'provenance-content', 'load-error']) assert.match(html, new RegExp(`id="${id}"`));
   assert.match(html, /aria-label="Replay time|for="timeline"/);
-  assert.match(html, /Unavailable in EGO/);
-  assert.match(html, /EGO 没有公开胸部 command/);
-  assert.doesNotMatch(html, /autoplay|OUR PROXY|PokeBot/i);
-  assert.match(html, /Not affiliated with or endorsed by DYNA/);
+  assert.match(html, /NymeriaPlus → URR → Taku/);
+  assert.doesNotMatch(html, /autoplay|PokeBot|Box Kitting|Wipe Metal Shelves|Restock Shelves|derived-orientation|ego-video|data-mode=/i);
+  assert.match(html, /Not affiliated with or endorsed by Meta or DYNA/);
 });
 
-test('one clock uses explicit source video timestamp and exposes no phantom source', async () => {
+test('one clock feeds both views without adding source videos or demonstration modes', async () => {
   const app = await readFile(new URL('../src/app.js', import.meta.url), 'utf8');
-  assert.match(app, /frame\?\.video_time_s/);
-  assert.match(app, /\(episode\?\.start \?\? 0\) \+ currentTime/);
-  assert.match(app, /No paired EGO video/);
+  assert.match(app, /CATALOG\.filter\(\(item\) => item\.kind === 'nymeria'\)/);
+  assert.match(app, /rawContainer: \$\('raw-skeleton-canvas'\)/);
+  assert.match(app, /frame\.source_t/);
+  assert.doesNotMatch(app, /videoUrl|activeMode|derivedEnabled/);
   assert.match(app, /document\.hidden\) setPlaybackState\(false\)/);
   assert.match(app, /controller\?\.abort\(\)/);
   assert.match(app, /linshenghou\/ego-urr-lab/);
@@ -80,28 +78,32 @@ test('paper theme supports reduced motion and mobile layout without remote fonts
   assert.doesNotMatch(css, /fonts\.google|@import.*https/);
 });
 
-test('Nymeria UI separates extraction and source speed from robot tracking performance', async () => {
+test('source inspection never substitutes mapped targets for original human URR', async () => {
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
   const app = await readFile(new URL('../src/app.js', import.meta.url), 'utf8');
-  assert.match(html, /id="mode-nymeria"/);
   assert.match(html, /id="extraction"/);
-  assert.match(html, /No solved Taku trajectory/);
-  assert.match(html, /Source motion speed · m\/s/);
+  assert.match(html, /Human source speed · m\/s/);
   assert.match(html, /CC BY-NC 4\.0/);
-  assert.match(app, /\$\('layer-solid'\)\.disabled = human/);
-  assert.match(app, /\$\('analysis'\)\.hidden = human/);
+  assert.match(app, /const source = frame\.source_targets \?\? \{\}/);
+  assert.match(app, /Source-only targets are not displayed as a robot solution/);
   assert.match(app, /anatomy\.hip \?\? 'root'/);
-  assert.match(html, /物理速度帽与数值信赖域不同/);
+  assert.match(html, /实验边界不能宣称符合 Taku 真机能力/);
+  assert.match(html, /Gauss–Newton/);
   assert.match(html, /非因果离线估计/);
-  assert.match(html, /no_velocity/);
-  assert.match(html, /position_only/);
+  assert.match(html, /Velocity feedforward<\/th><td>未实现/);
+  assert.match(html, /Per-frame jump guard/);
+  assert.match(html, /限制等效播放速度/);
+  assert.match(html, /逐帧边界不按 dt 缩放/);
+  assert.match(html, /0\.50 m 时选垂臂/);
+  assert.match(app, /Retarget mapping \/ home selection/);
+  assert.doesNotMatch(html, /Uncapped is not unchecked|未施加执行速度/);
 });
 
-test('all direct app element references exist and derived orientation defaults off', async () => {
+test('all direct app element references exist and source/target/FK inspections stay separate', async () => {
   const html = await readFile(new URL('../index.html', import.meta.url), 'utf8');
   const app = await readFile(new URL('../src/app.js', import.meta.url), 'utf8');
   const ids = new Set([...html.matchAll(/id="([^"]+)"/g)].map((m) => m[1]));
   for (const match of app.matchAll(/\$\('([^']+)'\)/g)) assert.ok(ids.has(match[1]), `Missing UI element ${match[1]}`);
-  assert.match(html, /id="derived-orientation" type="checkbox" \/>/);
-  assert.match(html, /位置误差仍保持原始 achieved xyz/);
+  for (const id of ['inspect-source', 'inspect-target', 'inspect-actual', 'inspect-error']) assert.ok(ids.has(id));
+  assert.match(html, /Full original notice/);
 });

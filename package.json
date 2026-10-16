@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Independent, source-aware study of egocentric motion, URR and recorded Taku playback.",
+  "description": "Independent NymeriaPlus skeleton to URR to Taku kinematic retargeting study.",
   "license": "MIT",
   "engines": {
     "node": ">=22.12.0"

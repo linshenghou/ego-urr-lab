@@ -77,9 +77,9 @@ test('FK origin is Rz Ry Rx then local motion, with root applied once', () => {
   links.get('tip').elements.forEach((value, i) => assert.ok(Math.abs(value - expected.elements[i]) < 1e-12));
   assert.throws(() => forwardKinematics({ root: 'base', joints: [{ ...joint, parent: 'missing' }] }, values), /Disconnected/);
 });
-test('catalog differentiates three Ego windows from independent tracking source', () => {
-  assert.equal(CATALOG.filter((e) => e.kind === 'ego').length, 3); assert.equal(CATALOG.filter((e) => e.kind === 'tracking').length, 1);
-  assert.deepEqual(CATALOG.filter((e) => e.kind === 'ego').map((e) => [e.start, e.end]), [[0, 73.2], [13, 23], [1.3, 15.5]]);
+test('public catalog contains only the two paired Nymeria excerpts', () => {
+  assert.equal(CATALOG.length, 2); assert.ok(CATALOG.every((e) => e.kind === 'nymeria'));
+  for (const entry of CATALOG) { assert.match(entry.sha256, /^[a-f0-9]{64}$/); assert.match(entry.solutionSha256, /^[a-f0-9]{64}$/); assert.match(entry.solution, /-taku.json$/); }
 });
 
 function trackingFixture() {

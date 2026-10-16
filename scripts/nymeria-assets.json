@@ -9,6 +9,14 @@
     "data/nymeria/housework-hands.json": {
       "sha256": "fcd41c4fa3e3a698402f9a1d1c02b4b58913b18fe7a5c59ae065fa7b60d0eea5",
       "bytes": 514949
+    },
+    "data/nymeria/housework-long-taku.json": {
+      "sha256": "3ddc07b2b09ddb7ece8e07f6e91246bf1e3f17f11e248520391278f32f721a1a",
+      "bytes": 5136783
+    },
+    "data/nymeria/housework-hands-taku.json": {
+      "sha256": "51ee6edd12f9d07a238d1d6f3c4eb235e1d85946ff3c78135ca6f4df415f328a",
+      "bytes": 644915
     }
   }
 }

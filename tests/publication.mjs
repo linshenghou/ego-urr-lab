@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, copyFile, symlink, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, copyFile, symlink, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -38,7 +38,7 @@ async function vendor(root, destination = 'public') {
 }
 function rejects(result, reason = /allowlist|unexpected/) { assert.ok(result.problems.some((problem) => reason.test(problem)), result.problems.join('\n')); }
 
-async function nymeria(root, destination = 'public', mutate = () => {}) {
+async function nymeria(root, destination = 'public', mutate = () => {}, mutateIK = () => {}) {
   const sourceHash = '08d7caad28d066969d023d6f1424a5b0e1daa850cd85601a49f51189a0fea653';
   const joints = ['root', 'c_spine0', 'c_spine1', 'c_spine2', 'c_spine3', 'c_neck', 'c_head',
     ...['l', 'r'].flatMap((side) => ['clavicle', 'uparm', 'lowarm', 'wrist', 'upleg', 'lowleg', 'foot', 'ball'].map((name) => `${side}_${name}`))];
@@ -69,6 +69,26 @@ async function nymeria(root, destination = 'public', mutate = () => {}) {
     const relative = `data/nymeria/${name}.json`, bytes = Buffer.from(JSON.stringify(document) + '\n');
     await put(root, `${destination}/${relative}`, bytes);
     review.files[relative] = { sha256: createHash('sha256').update(bytes).digest('hex'), bytes: bytes.length };
+    // Reuse only reviewed method metadata; all fixture trajectories below are
+    // synthetic, tiny and independent of the recorded motion samples.
+    const companion = JSON.parse(await readFile(new URL('../public/data/nymeria/housework-hands-taku.json', import.meta.url), 'utf8'));
+    companion.time = [...document.time]; companion.q = document.time.map(() => [...companion.solver.home]);
+    companion.targets = structuredClone(document.targets);
+    companion.actual = Object.fromEntries(Object.entries(document.targets).map(([site, target]) => [site, { p: target.p, q: target.q }]));
+    companion.errors = Object.fromEntries(Object.entries(document.targets).map(([site, target]) => [site, {
+      position_m: target.pv.map((valid) => valid ? 0 : null), orientation_rad: target.ov.map((valid) => valid ? 0 : null),
+    }]));
+    companion.stats = Object.fromEntries(Object.entries(document.targets).map(([site, target]) => [site, Object.fromEntries([
+      ['position', target.pv], ['orientation', target.ov],
+    ].map(([key, mask]) => [key, mask.some(Boolean) ? { n: mask.filter(Boolean).length, mean: 0, p95: 0, max: 0 } : null]))]));
+    companion.solver.diagnostics.frames = document.time.length;
+    companion.source = { ...companion.source, source_excerpt_sha256: review.files[relative].sha256,
+      source_time_start_s: document.source_time[0], source_time_end_s: document.source_time.at(-1) };
+    companion.license = { ...document.license, changes: document.license.changes + ' Further modified: numerical IK. Not official Dyna motion.' };
+    mutateIK(companion);
+    const companionPath = `data/nymeria/${name}-taku.json`, companionBytes = Buffer.from(JSON.stringify(companion) + '\n');
+    await put(root, `${destination}/${companionPath}`, companionBytes);
+    review.files[companionPath] = { sha256: createHash('sha256').update(companionBytes).digest('hex'), bytes: companionBytes.length };
   }
   await put(root, 'scripts/nymeria-assets.json', JSON.stringify(review) + '\n');
 }
@@ -149,7 +169,7 @@ test('dist and public symlinks never bypass byte validation', async (t) => {
   rejects(await checkPublication(root2), /symlink/);
 });
 
-test('only two reviewed numeric Nymeria excerpts pass source and built guards', async (t) => {
+test('only reviewed Nymeria excerpts and paired IK companions pass source and built guards', async (t) => {
   const root = await fixture(t); await vendor(root); await nymeria(root);
   assert.deepEqual((await checkPublication(root)).problems, []);
   await vendor(root, 'dist'); await nymeria(root, 'dist');
@@ -199,4 +219,30 @@ test('review manifest is narrow metadata, never an arbitrary JSON escape hatch',
   const root = await fixture(t); await vendor(root); await nymeria(root);
   await put(root, 'scripts/nymeria-assets.json', JSON.stringify({ payload: ['not a review manifest'] }));
   rejects(await checkPublication(root), /reviewed.*manifest/);
+});
+test('hash-pinned IK companions still reject unpaired source, arbitrary payloads and false scope', async (t) => {
+  const mutations = [
+    (doc) => { doc.source.source_excerpt_sha256 = '0'.repeat(64); },
+    (doc) => { doc.source.kinematics_sha256 = '1'.repeat(64); },
+    (doc) => { doc.time[1] += .1; },
+    (doc) => { doc.joint_names[0] = 'private_robot_joint'; },
+    (doc) => { doc.q[0].push(5); },
+    (doc) => { doc.q[1][0] += 5; },
+    (doc) => { doc.actual.left.media = [1, 2, 3]; },
+    (doc) => { doc.targets.left.pv[0] = false; },
+    (doc) => { doc.solver.bounds_are_manufacturer_limits = true; },
+    (doc) => { doc.license.id = 'MIT'; },
+    (doc) => { doc.solver.demographics = { age: 22 }; },
+    (doc) => { doc.mapping.method = [1, 2, 3]; },
+    (doc) => { doc.solver.method = { image: [1, 2, 3] }; },
+  ];
+  for (const mutateIK of mutations) {
+    const root = await fixture(t); await vendor(root); await nymeria(root, 'public', () => {}, mutateIK);
+    assert.ok((await checkPublication(root)).problems.length > 0, 'modified IK schema or source pairing must fail');
+  }
+});
+test('IK companion bytes remain pinned independently of source data', async (t) => {
+  const root = await fixture(t); await vendor(root); await nymeria(root);
+  await put(root, 'public/data/nymeria/housework-long-taku.json', '{}');
+  rejects(await checkPublication(root), /reviewed hash/);
 });

@@ -21,8 +21,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 This license covers only the original code and documentation in this
-repository. It does not cover the derived NymeriaPlus numeric data in
-public/data/nymeria/, which is licensed under CC BY-NC 4.0 (see Section B
+repository. It does not cover any derived NymeriaPlus numeric data in
+public/data/nymeria/, including the source excerpts and generated Taku IK
+trajectory companions, which are licensed under CC BY-NC 4.0 (see Section B
 of licenses/NYMERIAPLUS-DATA-LICENSE.txt). It does not cover remotely loaded
 third-party datasets, robot models, video, trademarks, or dependencies.
 See THIRD_PARTY_NOTICES.md.
