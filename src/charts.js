@@ -7,6 +7,17 @@ export const ERROR_METRICS = Object.freeze({
   orientation: { key: 'orientation_rad', scale: 180 / Math.PI, unit: 'deg', label: 'Orientation' },
 });
 
+/** Optional display projection: derived rotation must never replace direct position. */
+export function withDerivedOrientation(frame, enabled = false) {
+  if (!enabled) return frame;
+  const errors = { ...frame.errors };
+  for (const side of ['left', 'right']) errors[side] = {
+    ...frame.errors?.[side],
+    orientation_rad: frame.derived_errors?.[side]?.orientation_rad ?? null,
+  };
+  return { ...frame, errors };
+}
+
 export function frameError(frame, side, metric = 'position') {
   const definition = ERROR_METRICS[metric];
   if (!definition) throw new Error(`Unknown error metric: ${metric}`);
@@ -80,7 +91,7 @@ export function createErrorChart(container, { metric = 'position', onSeek = () =
     yMax = axisLimit(maximum * 1.03);
     const hasData = count > 0;
     empty.hidden = hasData;
-    empty.textContent = !next ? 'Select a source episode to inspect its errors.' : metric === 'orientation' ? '源文件缺少可比较的末端姿态；姿态误差不可用。' : 'No comparable reference points are available.';
+    empty.textContent = !next ? 'Select a source episode to inspect its errors.' : metric === 'orientation' ? '缺少实际朝向：ach.ee 只公开 xyz。可选用下述机器人 link 推导值，但不能视为直接测量。' : 'No comparable reference points are available.';
     svg.setAttribute('aria-label', hasData ? `${definition.label} errors over ${next.duration.toFixed(1)} seconds. Statistics are available in the table below.` : empty.textContent);
     for (let i = 0; i <= 4; i++) {
       const value = yMax * i / 4, yy = y(value);

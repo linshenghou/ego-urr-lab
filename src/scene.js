@@ -115,6 +115,44 @@ function lineSegments(color, dashed = false) {
   const material = dashed ? new THREE.LineDashedMaterial({ color, dashSize: .035, gapSize: .025, transparent: true, opacity: .7 }) : new THREE.LineBasicMaterial({ color, transparent: true, opacity: .9 });
   const lines = new THREE.LineSegments(new THREE.BufferGeometry(), material); lines.frustumCulled = false; return lines;
 }
+/** Original reference glyphs, not robot/body meshes or an IK result. */
+export function buildSourceTargets({ opacity = .32 } = {}) {
+  const solid = new THREE.Group(), targets = new THREE.Group(), groups = {}, axes = {};
+  const ghostMaterial = new THREE.MeshStandardMaterial({ color: 0x37ac94, transparent: true, opacity, roughness: .55, depthWrite: false, side: THREE.DoubleSide });
+  for (const site of SITES) {
+    const group = new THREE.Group(); group.name = site; groups[site] = group; targets.add(group);
+    let geometry;
+    if (site === 'footprint') geometry = new THREE.TorusGeometry(.21, .015, 10, 48);
+    else if (site.startsWith('elbow')) geometry = new THREE.CapsuleGeometry(.045, .10, 6, 12);
+    else geometry = new THREE.SphereGeometry(1, 24, 16);
+    const mesh = new THREE.Mesh(geometry, ghostMaterial); mesh.renderOrder = 5;
+    if (site === 'chest') mesh.scale.set(.11, .20, .16);
+    else if (site === 'left' || site === 'right') mesh.scale.set(.06, .045, .04);
+    group.add(mesh);
+    if (!site.startsWith('elbow')) { axes[site] = new THREE.AxesHelper(site === 'footprint' ? .3 : .19); group.add(axes[site]); }
+  }
+  function update(frame) {
+    for (const site of SITES) {
+      const target = frame.targets?.[site], group = groups[site]; setPose(group, target);
+      const oriented = validQuaternion(target?.q) && target?.valid_orientation !== false;
+      if (!oriented) group.quaternion.identity();
+      if (axes[site]) axes[site].visible = oriented;
+      if (site.startsWith('elbow') && group.visible) {
+        const wrist = frame.targets?.[site.slice(6)];
+        if (validPose(wrist)) {
+          const direction = new THREE.Vector3(...wrist.p).sub(group.position);
+          if (direction.lengthSq() > 1e-12) group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+        }
+      }
+    }
+    targets.updateMatrixWorld(true);
+  }
+  return { solid, targets, groups, axes, ghostMaterial, update, dispose() {
+    const geometries = new Set(), materials = new Set();
+    targets.traverse((object) => { if (object.geometry) geometries.add(object.geometry); if (object.material) for (const material of [object.material].flat()) materials.add(material); });
+    geometries.forEach((geometry) => geometry.dispose()); materials.forEach((material) => material.dispose());
+  } };
+}
 function setLinePoints(object, coordinates) {
   object.geometry.dispose(); object.geometry = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(coordinates, 3));
   if (object.material.isLineDashedMaterial) object.computeLineDistances();
@@ -130,43 +168,67 @@ export function createScene(container) {
   const grid = new THREE.GridHelper(40, 160, 0xc3cdc0, 0xe0e6db); grid.rotation.x = Math.PI / 2; grid.position.z = -.007; grid.material.transparent = true; grid.material.opacity = .58; scene.add(grid);
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshBasicMaterial({ color: 0xf4f6ef, transparent: true, opacity: .5, depthWrite: false })); floor.position.z = -.009; scene.add(floor);
   const skeletonRoot = new THREE.Group(), boneLines = lineSegments(0xc17b38), inferredLines = lineSegments(0xbba58b, true), stanceLines = lineSegments(0x9a998d, true), errorLines = lineSegments(0xb56d4c);
-  skeletonRoot.add(boneLines, inferredLines, stanceLines); scene.add(skeletonRoot, errorLines);
+  const jointPoints = new THREE.Points(new THREE.BufferGeometry(), new THREE.PointsMaterial({ color: 0x8c592c, size: .022, sizeAttenuation: true })); jointPoints.frustumCulled = false;
+  const boneTubes = new THREE.InstancedMesh(new THREE.CylinderGeometry(.007, .007, 1, 8), new THREE.MeshBasicMaterial({ color: 0x946d43 }), 100);
+  const jointSpheres = new THREE.InstancedMesh(new THREE.SphereGeometry(.014, 8, 6), new THREE.MeshBasicMaterial({ color: 0x946d43 }), 100);
+  for (const mesh of [boneTubes, jointSpheres]) { mesh.count = 0; mesh.frustumCulled = false; mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); }
+  const marker = new THREE.Object3D(), vertical = new THREE.Vector3(0, 1, 0);
+  skeletonRoot.add(boneLines, inferredLines, stanceLines, jointPoints, boneTubes, jointSpheres); scene.add(skeletonRoot, errorLines);
   let model = null, episode = null, currentFrame = null, currentBase = null, stopped = false, revision = 0, opacity = .32;
   const layers = { solid: true, targets: true, skeleton: false, errors: false };
   const applyLayers = () => { if (model) { model.solid.visible = layers.solid; model.targets.visible = layers.targets; } skeletonRoot.visible = layers.skeleton; errorLines.visible = layers.errors; };
+  const basePosition = (frame) => validPose(frame?.actual?.footprint) ? frame.actual.footprint.p : validPose(frame?.targets?.footprint) ? frame.targets.footprint.p : null;
   function reset() {
-    const base = currentFrame?.actual?.footprint?.p ?? [0, 0, 0]; controls.target.set(base[0], base[1], .85); camera.position.copy(controls.target).add(new THREE.Vector3(2.7, -3.2, 1.7)); controls.update(); currentBase = [...base];
+    const base = basePosition(currentFrame) ?? [0, 0, 0]; let height = .85;
+    if (episode?.kind === 'nymeria') { const points = Object.values(currentFrame?.raw ?? {}).filter(validPose); if (points.length) height = (Math.min(...points.map((p) => p.p[2])) + Math.max(...points.map((p) => p.p[2]))) / 2; }
+    controls.target.set(base[0], base[1], height); camera.position.copy(controls.target).add(episode?.kind === 'nymeria' ? new THREE.Vector3(1.8, -2.2, 1.1) : new THREE.Vector3(2.7, -3.2, 1.7)); controls.update(); currentBase = [...base];
   }
   reset();
   const resize = () => { const width = container.clientWidth, height = container.clientHeight; if (!width || !height) return; renderer.setSize(width, height); camera.aspect = width / height; camera.updateProjectionMatrix(); };
   const observer = new ResizeObserver(resize); observer.observe(container); resize();
   function update(frame) {
     currentFrame = frame; if (!model || !episode) return; model.update(frame);
-    const base = frame.actual?.footprint?.p;
+    const base = basePosition(frame);
     if (base && currentBase) { const delta = new THREE.Vector3(base[0] - currentBase[0], base[1] - currentBase[1], 0); camera.position.add(delta); controls.target.add(delta); }
     if (base) currentBase = [...base];
-    const bones = [], inferred = [], stance = [], errors = [], inferredNames = new Set(episode.skeleton?.inferred ?? []);
+    const bones = [], inferred = [], stance = [], errors = [], points = [], inferredNames = new Set(episode.skeleton?.inferred ?? []);
+    boneTubes.count = 0; jointSpheres.count = 0;
     for (const [a, b] of episode.skeleton?.bones ?? []) {
       const first = frame.raw?.[a], second = frame.raw?.[b]; if (!validPose(first) || !validPose(second)) continue;
       (inferredNames.has(a) || inferredNames.has(b) ? inferred : bones).push(...first.p, ...second.p);
+      if (episode.kind === 'nymeria' && boneTubes.count < 100) {
+        const start = new THREE.Vector3(...first.p), end = new THREE.Vector3(...second.p), direction = end.clone().sub(start), length = direction.length();
+        if (length > 1e-9) { marker.position.copy(start).add(end).multiplyScalar(.5); marker.quaternion.setFromUnitVectors(vertical, direction.divideScalar(length)); marker.scale.set(1, length, 1); marker.updateMatrix(); boneTubes.setMatrixAt(boneTubes.count++, marker.matrix); }
+      }
     }
     if (validPose(frame.raw?.pelvis) && validPose(frame.raw?.footprint)) stance.push(...frame.raw.pelvis.p, ...frame.raw.footprint.p);
+    if (episode.kind === 'nymeria') {
+      for (const value of Object.values(frame.raw ?? {})) if (validPose(value) && jointSpheres.count < 100) { marker.position.fromArray(value.p); marker.quaternion.identity(); marker.scale.setScalar(1); marker.updateMatrix(); jointSpheres.setMatrixAt(jointSpheres.count++, marker.matrix); }
+      const hip = frame.raw?.[episode.extraction?.anatomy?.hip];
+      if (validPose(hip) && validPose(frame.targets?.footprint)) stance.push(...hip.p, ...frame.targets.footprint.p);
+    }
     for (const site of SITES) if (validPose(frame.targets?.[site]) && validPose(frame.actual?.[site])) errors.push(...frame.targets[site].p, ...frame.actual[site].p);
-    setLinePoints(boneLines, bones); setLinePoints(inferredLines, inferred); setLinePoints(stanceLines, stance); setLinePoints(errorLines, errors); applyLayers();
+    boneTubes.instanceMatrix.needsUpdate = true; jointSpheres.instanceMatrix.needsUpdate = true;
+    setLinePoints(boneLines, episode.kind === 'nymeria' ? [] : bones); setLinePoints(inferredLines, inferred); setLinePoints(stanceLines, stance); setLinePoints(errorLines, errors); setLinePoints(jointPoints, points); applyLayers();
   }
   function tick() { if (stopped) return; controls.update(); renderer.render(scene, camera); requestAnimationFrame(tick); } tick();
   return {
     async setEpisode(next) {
-      const token = ++revision; const loaded = await loadModel(next.model); if (stopped || token !== revision) return [];
-      validateModelNodes(loaded.scene, next.model.expectedLinks);
+      const token = ++revision; const loaded = next.kind === 'nymeria' ? null : await loadModel(next.model); if (stopped || token !== revision) return [];
       const warnings = [];
-      if (!loaded.digest) warnings.push('Model integrity hash is unavailable in this browser context.');
-      else if (next.model.expectedSha256 && next.model.expectedSha256 !== loaded.digest) warnings.push(`Upstream model changed: manifest SHA-256 ${next.model.expectedSha256} differs from downloaded ${loaded.digest}. Link names and flat mesh binding were validated; model version parity is not established.`);
+      if (loaded) {
+        validateModelNodes(loaded.scene, next.model.expectedLinks);
+        if (!loaded.digest) warnings.push('Model integrity hash is unavailable in this browser context.');
+        else if (next.model.expectedSha256 && next.model.expectedSha256 !== loaded.digest) warnings.push(`Upstream model changed: manifest SHA-256 ${next.model.expectedSha256} differs from downloaded ${loaded.digest}. Link names and flat mesh binding were validated; model version parity is not established.`);
+      }
       if (model) { scene.remove(model.solid, model.targets); model.dispose(); }
-      model = buildModel(loaded.scene, next.model.kinematics, { opacity }); scene.add(model.solid, model.targets); episode = next; currentBase = null;
+      model = loaded ? buildModel(loaded.scene, next.model.kinematics, { opacity }) : buildSourceTargets({ opacity }); scene.add(model.solid, model.targets); episode = next; currentBase = null;
+      floor.visible = next.kind !== 'nymeria'; grid.position.z = next.kind === 'nymeria' ? 0 : -.007;
+      grid.material.opacity = next.kind === 'nymeria' ? .28 : .58;
+      renderer.domElement.setAttribute('aria-label', next.kind === 'nymeria' ? 'NymeriaPlus skeleton and derived URR reference glyphs; grid is Aria z=0, not measured ground' : 'Interactive Taku replay: drag to orbit, scroll to zoom');
       update(next.sample(0)); reset(); applyLayers(); return warnings;
     },
     update, setLayers(next) { Object.assign(layers, next); applyLayers(); }, setOpacity(value) { opacity = Math.max(0, Math.min(1, value)); if (model) model.ghostMaterial.opacity = opacity; }, reset,
-    dispose() { stopped = true; revision++; observer.disconnect(); controls.dispose(); model?.dispose(); renderer.dispose(); renderer.domElement.remove(); for (const object of [boneLines, inferredLines, stanceLines, errorLines, floor, grid]) { object.geometry.dispose(); object.material.dispose(); } },
+    dispose() { stopped = true; revision++; observer.disconnect(); controls.dispose(); model?.dispose(); renderer.dispose(); renderer.domElement.remove(); for (const object of [boneLines, inferredLines, stanceLines, errorLines, jointPoints, boneTubes, jointSpheres, floor, grid]) { object.geometry.dispose(); object.material.dispose(); if (object.isInstancedMesh) object.dispose(); } },
   };
 }

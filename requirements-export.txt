@@ -1,0 +1,4 @@
+# Optional standalone exporter and its synthetic tests; not used by the browser.
+# Tested with Python 3.14. These versions require Python >=3.12.
+numpy==2.5.1
+scipy==1.18.1

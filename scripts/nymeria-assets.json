@@ -1,0 +1,14 @@
+{
+  "schema": "ego-urr-lab.nymeria-publication.v1",
+  "source_sha256": "08d7caad28d066969d023d6f1424a5b0e1daa850cd85601a49f51189a0fea653",
+  "files": {
+    "data/nymeria/housework-long.json": {
+      "sha256": "70bb3ee276bc7720a579ad2efbf66fae48e093ae1203cad56f0a4378dd38d423",
+      "bytes": 4181209
+    },
+    "data/nymeria/housework-hands.json": {
+      "sha256": "fcd41c4fa3e3a698402f9a1d1c02b4b58913b18fe7a5c59ae065fa7b60d0eea5",
+      "bytes": 514949
+    }
+  }
+}

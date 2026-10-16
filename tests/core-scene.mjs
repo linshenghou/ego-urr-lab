@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { buildModel, validateModelNodes } from '../src/scene.js';
+import { buildModel, buildSourceTargets, validateModelNodes } from '../src/scene.js';
 import { pose, poseMatrix, jointMatrix } from '../src/data.js';
 const names = ['agv_base', 'torso_body_link', 'left_wrist_roll_link', 'right_wrist_roll_link', 'left_elbow_link', 'right_elbow_link', 'left_grippera_link', 'right_grippera_link'];
 const kin = { joints: ['left', 'right'].flatMap((side) => [{ name: `${side}_gripper_joint_frame`, type: 'fixed', xyz: [0, 0, -.088527], rpy: [0, 0, 0], parent: `${side}_wrist_roll_link`, child: `${side}_ee` }, { name: `${side}_gripper_front_joint`, parent: `${side}_wrist_roll_link`, child: `${side}_grippera_link`, type: 'prismatic', axis: [0, 1, 0], xyz: [0, 0, 0], rpy: [0, 0, 0] }]) };
@@ -28,4 +28,16 @@ test('elbow position stays fixed while display rotation follows target wrist', (
   const model = buildModel(fixture(), kin), elbow = pose([0, 0, 1]); const frame = { taku_links: {}, targets: { elbow_left: elbow, left: pose([1, 0, 1], [0, 0, 0, 1]) } };
   model.update(frame); const before = model.groups.elbow_left.quaternion.clone(); frame.targets.left = pose([0, 0, 2], [0, 0, 0, 1]); model.update(frame);
   assert.deepEqual(model.groups.elbow_left.position.toArray(), [0, 0, 1]); assert.ok(before.angleTo(model.groups.elbow_left.quaternion) > .5); assert.equal(elbow.q, null); model.dispose();
+});
+test('Nymeria glyphs contain no robot; fixed elbow position changes display heading only', () => {
+  const model = buildSourceTargets(), elbow = pose([0, 0, .4]);
+  const frame = { targets: { elbow_left: elbow, left: pose([1, 0, .4], [0, 0, 0, 1]) } };
+  model.update(frame); const before = model.groups.elbow_left.quaternion.clone();
+  assert.equal(model.solid.children.length, 0); assert.equal(model.groups.chest.visible, false);
+  assert.equal(model.axes.left.visible, true);
+  frame.targets.left = pose([0, 0, 1]); model.update(frame);
+  assert.equal(model.axes.left.visible, false); assert.equal(model.groups.left.visible, true);
+  assert.deepEqual(model.groups.elbow_left.position.toArray(), [0, 0, .4]);
+  assert.ok(before.angleTo(model.groups.elbow_left.quaternion) > .5); assert.equal(elbow.q, null);
+  model.dispose();
 });

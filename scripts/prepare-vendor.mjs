@@ -16,7 +16,7 @@ const decoder = await readFile(path.join(three, 'examples/jsm/libs/meshopt_decod
 const notice = decoder.split('\n').filter((line, i) => i < 2 && line.startsWith('//')).join('\n');
 if (!notice.includes('Copyright')) throw new Error('Meshopt license notice missing');
 await writeFile(path.join(root, 'public/licenses/MESHOPT-NOTICE.txt'), notice + '\n');
-for (const name of ['DRACO-LICENSE.txt', 'MESHOPT-LICENSE.txt']) {
+for (const name of ['DRACO-LICENSE.txt', 'MESHOPT-LICENSE.txt', 'NYMERIAPLUS-DATA-LICENSE.txt']) {
   await copyFile(path.join(root, 'licenses', name), path.join(root, 'public/licenses', name));
 }
-console.log('Prepared pinned renderer decoders only; no dataset or robot assets copied.');
+console.log('Prepared pinned renderer decoders and license notices; no motion or robot assets copied.');

@@ -1,5 +1,6 @@
-/** Source decoders and audit-friendly replay sampling. No asset payloads are bundled. */
+/** Source decoders and audit-friendly replay sampling; licensed Nymeria excerpts are local. */
 import { Matrix4, Quaternion, Vector3, Euler } from 'three';
+import { NYMERIA_CATALOG, loadNymeriaEpisode } from './nymeria.js';
 
 export const EGO_BASE = 'https://www.dyna.co/assets/we/ego-replay/data/';
 export const TRACKING_BASE = 'https://www.dyna.co/assets/we/';
@@ -8,6 +9,7 @@ export const CATALOG = Object.freeze([
   { id: 'wipe-shelves', label: 'Wipe Metal Shelves', kind: 'ego', sourceId: '68c67b6dec331250d5e7485d', start: 13, end: 23, description: '10 s · source window 13–23 s' },
   { id: 'restock-shelves', label: 'Restock Shelves', kind: 'ego', sourceId: '68ed3b821d840fbdae1cb24a', start: 1.3, end: 15.5, description: '14.2 s · source window 1.3–15.5 s' },
   { id: 'urr-tracking', label: 'URR Tracking', kind: 'tracking', description: 'Six-site targets and recorded Taku joint states · separate source' },
+  ...NYMERIA_CATALOG,
 ]);
 export const SITES = ['left', 'right', 'chest', 'elbow_left', 'elbow_right', 'footprint'];
 export const finite = (value) => typeof value === 'number' && Number.isFinite(value);
@@ -107,6 +109,19 @@ function checkClock(documents) {
   for (const doc of documents) if (doc.n !== first.n || doc.fps !== first.fps || doc.t0 !== first.t0 || doc.space !== 'robot_world') throw new Error('Source clocks or coordinate frames disagree');
 }
 
+/** Optional geometry-derived observation; never overwrite published ach.ee fields. */
+export function deriveEgoEndEffectors(links, kinematics) {
+  const result = {};
+  for (const side of ['left', 'right']) {
+    const link = links[`${side}_wrist_roll_link`];
+    const fixed = kinematics.joints?.find((joint) => joint.name === `${side}_gripper_joint_frame`);
+    if (!validPose(link) || !link.valid_orientation || !fixed || fixed.type !== 'fixed' || fixed.parent !== `${side}_wrist_roll_link`) continue;
+    result[side] = matrixPose(poseMatrix(link).multiply(jointMatrix(fixed)));
+    result[side].provenance = 'Derived: exported wrist-roll world pose × fixed gripper_joint_frame; not a published achieved quaternion';
+  }
+  return result;
+}
+
 export function createEgoEpisode(record, { manifest, commands, robot, skeleton, kinematics }, warnings = []) {
   if (manifest.schema !== 'dyna.web.ego-replay.v1' || manifest.coordinate_frame !== 'robot_world' || manifest.up_axis !== 'Z' || manifest.units !== 'metres' || manifest.quaternion_order !== 'xyzw') throw new Error('Unsupported ego frame or units');
   if (manifest.variant !== 'rl' || manifest.revision !== 'real_time_1x') throw new Error('Expected recorded real-time RL source');
@@ -124,7 +139,8 @@ export function createEgoEpisode(record, { manifest, commands, robot, skeleton, 
     targets.footprint = aligned(c.pose('cmd.fp', 'yaw'), alignment); actual.footprint = aligned(c.pose('ach.base', 'yaw'), alignment);
     for (const name of robot.links ?? []) taku_links[name] = aligned(r.pose(`link.${name}`), alignment);
     for (const name of skeleton.joints ?? []) raw[name] = aligned(s.pose(`skel.${name}`, name.startsWith('elbow_') ? 'quaternion' : 'none'), alignment);
-    return { t, source_t: commands.t0 + start + t, video_time_s: start + t, targets, actual, errors: errorsFor(targets, actual), raw, taku_links, held: c.value('cmd.held') > .5, command_age_ms: c.value('cmd.age_ms') };
+    const derived_actual = deriveEgoEndEffectors(taku_links, kinematics);
+    return { t, source_t: commands.t0 + start + t, video_time_s: start + t, targets, actual, errors: errorsFor(targets, actual), derived_actual, derived_errors: errorsFor(targets, derived_actual), raw, taku_links, held: c.value('cmd.held') > .5, command_age_ms: c.value('cmd.age_ms') };
   };
   // Statistical population: only original sample timestamps within the exact crop.
   // Fractional boundaries are valid for display, never extra statistical samples.
@@ -135,11 +151,13 @@ export function createEgoEpisode(record, { manifest, commands, robot, skeleton, 
   const bones = (skeleton.bones ?? []).map(([a, b]) => [skeleton.joints[a], skeleton.joints[b]])
     .filter(([a, b]) => !([a, b].includes('pelvis') && [a, b].includes('footprint'))
       && !(stanceBone.length === 2 && stanceBone.includes(a) && stanceBone.includes(b)));
+  const derivedPositionAgreement = Object.fromEntries(['left', 'right'].map((site) => [site, summary(frames.map((frame) => errorsFor(frame.actual, frame.derived_actual)[site].position_m))]));
   return { ...record, duration, fps: cmd.fps, start, frames, sample, stats: statistics(frames), videoUrl: folder + 'ego.mp4',
+    derivedOrientation: { method: 'Exported world wrist-roll pose multiplied by the fixed gripper_joint_frame transform; native timestamps, no second FK of world poses.', positionAgreement: derivedPositionAgreement },
     model: { modelUrl: EGO_BASE + 'dvt1_body.glb.txt', kinematics, expectedSha256: manifest.model_quality?.model_sha256 ?? manifest.integrity?.['../shared/dvt1_body.glb']?.sha256, expectedLinks: robot.links ?? [] },
     skeleton: { bones, inferred: skeleton.inferred ?? [], stanceBone },
     provenance: [folder + 'manifest.json', folder + 'commands.json', folder + 'robot.json', folder + 'skeleton.json', EGO_BASE + 'dvt1_kin.json'],
-    warnings: [...warnings, 'Recorded 1× RL simulation, not physical hardware and not a reimplemented controller.', 'Ego commands expose hands and Footprint only. Skeleton elbows are guides; shoulders use an assumed 0.30 m upper-arm length. No official chest/elbow command is published.', 'Achieved hand orientations are absent: orientation error is unavailable, not zero.', '15 Hz quantized display data; smooth playback does not recover high-frequency measurements. Video is uncalibrated context, not spatial reprojection.', 'Ego gripper width overlay is not replayed here; target fingers are a fixed reference mesh.'],
+    warnings: [...warnings, 'Recorded 1× RL simulation, not physical hardware and not a reimplemented controller.', 'Ego commands expose hands and Footprint only. Skeleton elbows are guides; shoulders use an assumed 0.30 m upper-arm length. No official chest/elbow command is published.', 'Published achieved hand orientations are absent: the direct orientation metric is unavailable, not zero. An optional FK-derived metric reconstructs EE rotation from exported wrist-roll poses and the fixed EE frame; it is labelled separately and is not a measured quaternion.', ...Object.entries(derivedPositionAgreement).filter(([, stat]) => stat).map(([site, stat]) => `FK reference cross-check (${site}): reconstructed EE position versus published achieved position, mean ${(stat.mean * 1000).toFixed(2)} mm / max ${(stat.max * 1000).toFixed(2)} mm. Position agreement does not independently validate orientation; both sources are quantized.`), '15 Hz quantized display data; smooth playback does not recover high-frequency measurements. Video is uncalibrated context, not spatial reprojection.', 'Ego gripper width overlay is not replayed here; target fingers are a fixed reference mesh.'],
   };
 }
 
@@ -203,6 +221,7 @@ async function getJson(url, signal) {
 }
 export async function loadEpisode(id, { signal, onProgress = () => {} } = {}) {
   const record = CATALOG.find((item) => item.id === id); if (!record) throw new Error('Unknown episode');
+  if (record.kind === 'nymeria') return loadNymeriaEpisode(id, { signal, onProgress });
   onProgress(`Loading official ${record.label} source…`);
   if (record.kind === 'tracking') {
     const [document, kinematics] = await Promise.all([getJson(TRACKING_BASE + 'tracking_data.json', signal), getJson(TRACKING_BASE + 'dvt1_kin.json', signal)]);

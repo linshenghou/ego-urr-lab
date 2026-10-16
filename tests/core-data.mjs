@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Quaternion, Vector3, Matrix4 } from 'three';
-import { decodeColumns, createEgoEpisode, createTrackingEpisode, errorsFor, pose, summary, jointMatrix, forwardKinematics, CATALOG } from '../src/data.js';
+import { decodeColumns, createEgoEpisode, createTrackingEpisode, errorsFor, pose, summary, jointMatrix, forwardKinematics, deriveEgoEndEffectors, CATALOG } from '../src/data.js';
 
 function encoded(values) { const bytes = Buffer.alloc(values.length * 2); values.forEach((value, i) => bytes.writeInt16LE(value, i * 2)); return bytes.toString('base64'); }
 function columns(n = 5, fps = 2) { return { schema: 'dyna.web.columnar-int16.v1', n, fps, t0: 20, space: 'robot_world', null_value: -32768, scales: { pos: 1000, quat: 10000, yaw: 1000 }, channels: {}, constants: {}, channel_kinds: {} }; }
@@ -55,6 +55,20 @@ test('orientation geodesic is sign invariant, missing labels remain unavailable'
   assert.ok(errorsFor({ left: pose(p, q) }, { left: pose(p, q.map((v) => -v)) }).left.orientation_rad < 1e-7);
   assert.equal(errorsFor({ left: pose(p, q) }, { left: pose(p) }).left.orientation_rad, null);
   assert.equal(summary([null, NaN]), null); assert.deepEqual(summary([0, 1, 2]), { n: 3, mean: 1, p95: 1.9, max: 2 });
+});
+test('derived EGO orientation uses the exact fixed EE frame and preserves direct missing data', () => {
+  const { record, input } = egoFixture(0, 2);
+  input.kinematics.joints.push({ name: 'left_gripper_joint_frame', type: 'fixed', parent: 'left_wrist_roll_link', child: 'left_ee_fk_target_frame', xyz: [.05, 0, 0], rpy: [0, 0, Math.PI / 2] });
+  const episode = createEgoEpisode(record, input), frame = episode.sample(0);
+  assert.equal(frame.actual.left.q, null);
+  assert.equal(frame.errors.left.orientation_rad, null);
+  assert.equal(episode.stats.left.orientation, null);
+  assert.ok(Math.abs(frame.derived_errors.left.orientation_rad - Math.PI / 2) < 1e-10);
+  assert.ok(Math.abs(frame.derived_actual.left.p[0] - frame.taku_links.left_wrist_roll_link.p[0] - .05) < 1e-10);
+  assert.equal(frame.derived_actual.right, undefined);
+  assert.ok(Math.abs(episode.derivedOrientation.positionAgreement.left.mean - .05) < 1e-10);
+  input.kinematics.joints[0].type = 'revolute';
+  assert.deepEqual(deriveEgoEndEffectors(frame.taku_links, input.kinematics), {});
 });
 test('FK origin is Rz Ry Rx then local motion, with root applied once', () => {
   const joint = { name: 'arm', parent: 'base', child: 'tip', type: 'revolute', xyz: [.2, 0, 1], rpy: [0, 0, .3], axis: [0, 0, 1] };
