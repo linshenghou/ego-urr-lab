@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f6f7f3" />
+    <meta name="color-scheme" content="only light" />
+    <meta name="darkreader-lock" />
+    <meta name="description" content="An independent, open research viewer for egocentric human motion, unified robot representations, and Taku replay. Explore source semantics and tracking error on one timeline." />
+    <title>EGO / URR Lab — From human motion to robot motion</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#replay">Skip to replay</a>
+    <header class="site-header">
+      <a class="wordmark" href="#top" aria-label="EGO URR Lab home"><span class="wordmark-symbol" aria-hidden="true">↗</span>EGO <span class="wordmark-slash">/</span> URR <span class="wordmark-lab">LAB</span></a>
+      <nav aria-label="Main navigation"><a href="#research">Research</a><a href="#replay">Replay</a><a href="#method">Method</a><a class="repository-link" href="#about">GitHub <span aria-hidden="true">↗</span></a></nav>
+    </header>
+
+    <main id="top">
+      <section class="hero page-width" id="research" aria-labelledby="hero-title">
+        <div>
+          <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> INDEPENDENT RESEARCH / OPEN NOTEBOOK</p>
+          <h1 id="hero-title">From human motion<br />to <span>robot motion.</span></h1>
+        </div>
+        <div class="hero-aside"><p>从第一人称画面，到可解释的运动表示。<br />在同一条时间线上，观察 EGO、URR 与 Taku 的关系。</p><p class="fine-print">An independent study of publicly available DYNA demonstrations.<br />非 DYNA 官方项目；公开的是分析方法与可视化代码。</p><a class="text-link" href="#replay">Explore the replay <span aria-hidden="true">↓</span></a></div>
+      </section>
+
+      <section class="replay-section page-width" id="replay" aria-labelledby="replay-title">
+        <div class="section-heading"><div><p class="eyebrow">01 / OBSERVE</p><h2 id="replay-title">One timeline. A closer look.</h2></div><p class="section-caption">真实源数据 · 同步回放 · 显式区分测量与推导</p></div>
+
+        <div class="replay-shell">
+          <div class="replay-toolbar">
+            <div class="mode-tabs" role="tablist" aria-label="Data source mode"><button id="mode-ego" role="tab" aria-selected="true" aria-controls="episode-panel" data-mode="ego">EGO demonstrations</button><button id="mode-tracking" role="tab" aria-selected="false" aria-controls="episode-panel" data-mode="tracking" tabindex="-1">URR tracking</button></div>
+            <span class="toolbar-note">PUBLIC SOURCE / LOCAL ANALYSIS</span>
+          </div>
+          <div id="episode-panel" role="tabpanel" aria-labelledby="mode-ego">
+            <div class="episode-row"><div id="episode-tabs" class="episode-tabs" aria-label="Choose an episode"></div><p id="episode-description" class="episode-description">Loading the episode catalogue…</p></div>
+
+            <div id="load-status" class="load-status" role="status"><span class="loading-dot" aria-hidden="true"></span><span id="load-message">Preparing the viewer…</span></div>
+            <div id="load-error" class="load-error" role="alert" hidden><div><h3>The source could not be loaded.</h3><p id="load-error-message"></p><p>演示依赖官方远程文件。网络、跨域策略或源站路径变化可能影响加载；这里不会用示例数据替代。</p></div><div class="error-actions"><button id="retry-load" class="button">Retry</button><a href="https://www.dyna.co/dyna-2.1" target="_blank" rel="noreferrer">Open the official source ↗</a></div></div>
+
+            <div class="stage-grid">
+              <div class="scene-panel"><div class="panel-topline"><span class="panel-letter">A</span><h3>Taku <span>/ URR overlay</span></h3><button class="icon-button" id="reset-camera" title="Reset camera" aria-label="Reset 3D camera">↺</button></div><div id="scene" class="scene" role="img" aria-label="Interactive Taku robot and semi-transparent URR targets. Drag to orbit, scroll to zoom." tabindex="0"></div><div class="scene-footer"><span><i class="legend-dot solid-dot"></i> Robot replay</span><span><i class="legend-dot target-dot"></i> URR targets</span><span class="orbit-hint">Drag to orbit · Scroll to zoom</span></div></div>
+              <aside class="source-panel" aria-label="Source video and current motion data"><div class="panel-topline"><span class="panel-letter">B</span><h3>First-person <span>/ source video</span></h3><a id="source-video-link" class="icon-button" href="https://www.dyna.co/dyna-2.1" target="_blank" rel="noreferrer" title="Open original video" aria-label="Open original video">↗</a></div><div class="video-wrap"><video id="ego-video" muted playsinline preload="metadata" aria-label="Original egocentric demonstration video, synchronized with replay"></video><div id="video-placeholder" class="video-placeholder"><span class="placeholder-mark" aria-hidden="true">↗</span><p id="video-placeholder-title">Original view</p><span id="video-placeholder-detail">视频与机器人使用同一条回放时间轴。</span></div><div class="video-caption"><span id="video-state">SOURCE MEDIA</span><time id="video-time">0.000 s</time></div></div><div class="live-readout"><div class="readout-heading"><p class="eyebrow">AT THIS INSTANT</p><span class="live-label"><span class="status-dot" aria-hidden="true"></span> REPLAY</span></div><p class="readout-label">双手最大位置误差 <span>target ↔ robot</span></p><div class="live-value"><span id="current-error">—</span><span class="unit">cm</span></div><div class="hand-readouts"><div><span><i class="legend-dot left-dot"></i> Left wrist</span><strong id="current-left">—</strong></div><div><span><i class="legend-dot right-dot"></i> Right wrist</span><strong id="current-right">—</strong></div></div><p class="readout-note">仅在目标与机器人参考点同时有效时计算。<br />这不是实机闭环控制性能的独立测评。</p></div></aside>
+            </div>
+
+            <div class="transport"><button id="play-pause" class="play-button" disabled aria-label="Play replay"><span id="play-icon" aria-hidden="true">▶</span><span id="play-label">Play</span></button><div class="timeline"><label class="sr-only" for="timeline">Replay time in seconds</label><input id="timeline" type="range" min="0" max="1" step="0.001" value="0" disabled /><div class="timeline-labels"><time id="current-time">0.0 s</time><span id="duration-label">—</span></div></div><label class="speed-label"><span class="sr-only">Playback speed</span><select id="playback-speed" aria-label="Playback speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label></div>
+            <div class="layer-bar"><span class="layer-label">LAYERS</span><label><input type="checkbox" id="layer-solid" checked /><span>Robot</span></label><label><input type="checkbox" id="layer-targets" checked /><span>URR meshes</span></label><label><input type="checkbox" id="layer-skeleton" /><span>Source skeleton</span></label><label><input type="checkbox" id="layer-errors" /><span>Error lines</span></label><label class="opacity-label" for="target-opacity">Target opacity <input type="range" id="target-opacity" min="0.05" max="0.8" step="0.01" value="0.28" /><output id="opacity-value" for="target-opacity">28%</output></label></div>
+          </div>
+        </div>
+        <div class="source-notes"><p><span class="note-index">↳</span> 数据与 Taku 模型在浏览器中从官方来源按需读取；本仓库不打包或重新授权这些第三方资产。</p><details id="provenance-details"><summary>Source & assumptions</summary><div id="provenance-content"><p>Choose an episode to inspect its provenance.</p></div></details></div>
+      </section>
+
+      <section class="analysis-section page-width" id="analysis" aria-labelledby="analysis-title"><div class="section-heading"><div><p class="eyebrow">02 / MEASURE</p><h2 id="analysis-title">Tracking, made measurable.</h2></div><p class="section-caption">Native samples. No smoothed-away errors.</p></div><div class="analysis-intro"><p>把“看起来跟得上”变成可以检查的量。位置误差取对应参考点间的欧氏距离；姿态误差取两个旋转之间的最短旋转角。</p><p class="fine-print">统计基于源文件的原始采样帧，显示插值不参与统计。缺失或不适用的姿态字段保持为空，不补零。</p></div><div class="charts-grid"><div class="chart-panel"><div class="chart-heading"><h3>Wrist position</h3><span>cm</span></div><div id="position-chart" class="chart"></div><div class="chart-legend"><span><i class="legend-line left-line"></i> Left</span><span><i class="legend-line right-line"></i> Right</span><span class="chart-hint">Click the chart to seek</span></div></div><div class="chart-panel"><div class="chart-heading"><h3>Wrist orientation</h3><span>deg</span></div><div id="orientation-chart" class="chart"></div><div class="chart-legend"><span><i class="legend-line left-line"></i> Left</span><span><i class="legend-line right-line"></i> Right</span><span class="chart-hint">Missing data stays missing</span></div></div></div><div class="statistics-wrap"><div class="statistics-heading"><h3>Episode summary</h3><p id="sample-count">Waiting for a source episode</p></div><table class="statistics-table"><caption class="sr-only">Tracking error statistics from native source frames</caption><thead><tr><th scope="col">Reference point</th><th scope="col">Measure</th><th scope="col">Mean</th><th scope="col">P95</th><th scope="col">Max</th><th scope="col">Valid samples</th></tr></thead><tbody id="statistics-body"></tbody></table></div><p class="metric-caveat">Reading the numbers · 不同源文件、参考点定义与任务不能直接横向排名。这里的误差来自公开记录的几何比较，不等同于在线 IK 误差、动力学可行性或实机安全性。</p></section>
+
+      <section class="method-section page-width" id="method" aria-labelledby="method-title">
+        <div class="section-heading"><div><p class="eyebrow">03 / UNDERSTAND</p><h2 id="method-title">A representation is a choice.</h2></div><p class="section-caption">先明确“这个点是什么”，再讨论它跟得怎么样。</p></div>
+        <div class="method-flow">
+          <article><span class="step-number">01</span><h3>Read the source.</h3><p>分别读取演示轨迹、机器人记录与视频。EGO 演示和 URR Tracking 是不同的数据入口，不把它们当成同一段实验。</p></article>
+          <article><span class="step-number">02</span><h3>Name the frames.</h3><p>区分官方目标、源骨架引导点和推导出的显示朝向。三维模型是参考系的可视化载体，不是额外的传感器测量。</p></article>
+          <article><span class="step-number">03</span><h3>Share one clock.</h3><p>机器人、目标、视频和误差曲线沿同一条相对时间轴回放。拖动到任一时刻，检查动作与数值是否一致。</p></article>
+          <article><span class="step-number">04</span><h3>Keep the caveats.</h3><p>对原始采样做统计，保留缺失字段与源数据限制。目标回放不等于重新求解 IK，也不证明动力学可执行。</p></article>
+        </div>
+        <div class="semantic-matrix">
+          <div class="matrix-intro"><p class="eyebrow">SEMANTICS / NOT ALL TARGETS ARE EQUAL</p><h3>What are we actually looking at?</h3><p>半透明 mesh 可以有完整显示姿态，但这并不代表源数据为每个部位都记录了完整姿态。两个数据入口的字段也不相同。</p></div>
+          <table><caption class="sr-only">URR target definitions and display semantics</caption><thead><tr><th scope="col">Reference</th><th scope="col">Data meaning</th><th scope="col">How to read it</th></tr></thead><tbody>
+            <tr><th scope="row">Wrist / EE<span>手腕或末端参考点</span></th><td><span class="source-tag">OFFICIAL TARGET</span><br />Position + orientation</td><td>目标包含位姿；EGO 的 achieved 手部只有位置，因此不能计算它的姿态误差。末端参考点也不自动等于人体指尖。</td></tr>
+            <tr><th scope="row">Elbow<span>肘部位置与显示朝向</span></th><td><span class="source-tag guide-tag">SOURCE-DEPENDENT</span><br />Guide / position target</td><td>EGO 来自源骨架引导，不是肘部控制目标；Tracking 提供 xyz 目标。肘 → 腕方向用于推算 Tracking mesh 朝向，并非测得的肘部姿态。</td></tr>
+            <tr><th scope="row">Chest<span>仅 Tracking 有目标</span></th><td><span class="source-tag">TRACKING TARGET</span><br />Unavailable in EGO</td><td>Tracking 提供胸部目标；EGO 没有公开胸部 command，本页不补造目标。人体骨架推导的 chest proxy 必须另行标定并明确标记。</td></tr>
+            <tr><th scope="row">Footprint<span>地面上的身体参考</span></th><td><span class="source-tag">OFFICIAL TARGET</span><br />Ground reference / heading</td><td>按源文件的地面参考与水平朝向回放；统一的首帧变换同时作用于目标和机器人。它不是双脚接触估计，也不是稳定性保证。</td></tr>
+          </tbody></table>
+        </div>
+        <aside class="method-note"><span class="note-symbol" aria-hidden="true">↗</span><div><h3>A mesh follows a frame — not the other way around.</h3><p>先定义参考点及其朝向，再施加固定的模型局部变换。即便肘点静止，当手腕移动时，连接方向改变，肘部 mesh 也可以旋转；原始肘点的位置并没有因此改变。</p></div></aside>
+      </section>
+
+      <section class="about-section page-width" id="about" aria-labelledby="about-title"><div><p class="eyebrow">A WORKING RESEARCH NOTEBOOK</p><h2 id="about-title">Open the method.<br />Keep the provenance.</h2></div><div><p>这个项目公开可复现的可视化与分析代码。首版范围是 EGO → URR → Taku；后续实验应清楚记录数据来源、参考系定义与评估口径。</p><div class="about-links"><a class="button repository-link" href="#about">View the repository <span aria-hidden="true">↗</span></a><a class="text-link" href="https://www.dyna.co/dyna-2.1" target="_blank" rel="noreferrer">Original DYNA 2.1 research ↗</a></div><p class="fine-print">Independent project. Not affiliated with or endorsed by DYNA.<br />第三方名称、数据、模型与视频的权利归各自权利人所有。公开可访问不意味着可以自由再分发。</p></div></section>
+    </main>
+    <footer class="site-footer page-width"><a class="wordmark" href="#top">EGO <span class="wordmark-slash">/</span> URR <span class="wordmark-lab">LAB</span></a><p>Motion, with context.</p><a href="#top">Back to top ↑</a></footer>
+    <script type="module" src="/src/app.js"></script>
+  </body>
+</html>

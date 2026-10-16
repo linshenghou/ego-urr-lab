@@ -1,0 +1,30 @@
+{
+  "name": "ego-urr-lab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Independent, source-aware study of egocentric motion, URR and recorded Taku playback.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "prepare:vendor": "node scripts/prepare-vendor.mjs",
+    "predev": "npm run prepare:vendor",
+    "dev": "vite --host 127.0.0.1 --port 8788 --strictPort",
+    "prebuild": "npm run prepare:vendor",
+    "build": "vite build",
+    "postbuild": "npm run check:dist",
+    "preview": "vite preview --host 127.0.0.1 --port 8788 --strictPort",
+    "test": "node --test tests/*.mjs",
+    "check:publication": "node scripts/check-publication.mjs",
+    "check:dist": "node scripts/check-publication.mjs --dist",
+    "verify": "npm test && npm run check:publication && npm run build"
+  },
+  "dependencies": {
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "vite": "8.3.4"
+  }
+}

@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.DS_Store
+.env*
+!.env.example
+public/draco/
+public/licenses/
+local-data/
+qa/
+*.log
+*.mp4
+*.glb
+*.mcap
+*.rrd
+*.vrs
